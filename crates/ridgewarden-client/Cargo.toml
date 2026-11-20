@@ -1,0 +1,28 @@
+[package]
+name = "ridgewarden-client"
+version = "0.1.0"
+description = "Shared types and helpers for ridgewarden apps: events, the core's local API, mesh projections, page layout"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow = "1.0.104"
+blake3 = "1.8.7"
+ed25519-dalek = "3.0.0"
+getrandom = "0.4.3"
+hex = "0.4.3"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "query"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+time = { version = "0.3.45", features = ["formatting", "parsing", "macros"] }
+tokio = { version = "1.54.1", features = ["time", "process", "io-util"] }
+tracing = "0.1.44"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["time", "rt", "macros"] }
