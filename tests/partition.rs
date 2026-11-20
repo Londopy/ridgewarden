@@ -342,6 +342,8 @@ async fn apps_publish_files_from_the_import_folder_only() {
     // an app could plant a link to the key in the shared folders
     #[cfg(unix)]
     {
+        // this test agent keeps its key in memory; put a stand-in secret where the key goes
+        std::fs::write(&key, "a".repeat(64)).unwrap();
         std::os::unix::fs::symlink(&key, imports.join("k")).unwrap();
         let err = core.blob_add("k", "stolen", 5).await.unwrap_err();
         assert!(format!("{err:#}").contains("not a plain file"), "{err:#}");
