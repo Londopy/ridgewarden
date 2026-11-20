@@ -349,6 +349,7 @@ async fn apps_publish_files_from_the_import_folder_only() {
         assert!(format!("{err:#}").contains("not a plain file"), "{err:#}");
         let before = std::fs::read(&key).unwrap();
         let exports = a.app.cfg.data_dir.join("exports");
+        std::fs::create_dir_all(&exports).unwrap();
         std::os::unix::fs::symlink(&key, exports.join("out.part")).unwrap();
         core.blob_export(&urgent, "out.bin").await.unwrap();
         assert_eq!(
