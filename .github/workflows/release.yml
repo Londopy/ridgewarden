@@ -161,7 +161,7 @@ jobs:
           merge-multiple: true
 
       # segno draws the magnet QR codes; setup-python because the runner's system pip refuses installs
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
