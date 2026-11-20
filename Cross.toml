@@ -1,0 +1,3 @@
+# pass the release public keys into the build container so they get compiled in
+[build.env]
+passthrough = ["RIDGEWARDEN_RELEASE_KEYS"]
