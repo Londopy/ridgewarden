@@ -1,0 +1,21 @@
+[Unit]
+Description=ridgewarden core agent for AREDN meshes
+Documentation=https://github.com/Londopy/ridgewarden
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ridgewarden
+Group=ridgewarden
+ExecStart=/usr/bin/ridgewarden --config /etc/ridgewarden/ridgewarden.toml run
+Restart=on-failure
+RestartSec=10
+# the agent only needs its data directory; everything else is read-only to it
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/ridgewarden
+
+[Install]
+WantedBy=multi-user.target

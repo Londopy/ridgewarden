@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = "configure" ]; then
+    if ! id ridgewarden >/dev/null 2>&1; then
+        adduser --system --group --home /var/lib/ridgewarden --no-create-home ridgewarden
+    fi
+    install -d -m 755 /etc/ridgewarden
+    install -d -m 750 -o ridgewarden -g ridgewarden /var/lib/ridgewarden
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        # restart only if it was already set up; a fresh install still needs `ridgewarden init`
+        if [ -f /etc/ridgewarden/ridgewarden.toml ]; then
+            systemctl try-restart ridgewarden || true
+        fi
+    fi
+fi

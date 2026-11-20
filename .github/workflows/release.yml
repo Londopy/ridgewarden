@@ -1,0 +1,255 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to rebuild, e.g. v0.2.0
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: Validate version and changelog
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+    steps:
+      # a manual run rebuilds an existing tag, so check out that tag, not main
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # a manual run rebuilds an existing tag; a tag push uses its own name
+      - id: tag
+        run: |
+          tag="${{ inputs.tag || github.ref_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: Londopy/patchnotes@v2.6.0
+        with:
+          file: CHANGELOG.md
+          strict: "true"
+          check-version: ${{ steps.tag.outputs.tag }}
+
+      - name: Tag matches Cargo.toml
+        run: |
+          cargo_ver=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          test "$cargo_ver" = "${{ steps.tag.outputs.version }}" || {
+            echo "::error::Cargo.toml says $cargo_ver but the tag is ${{ steps.tag.outputs.tag }}"
+            exit 1
+          }
+
+      # a build without release keys can't verify updates, so it must never ship
+      - name: Release keys are configured
+        run: |
+          test -n "${{ vars.RIDGEWARDEN_RELEASE_KEYS }}" || {
+            echo "::error::Set the RIDGEWARDEN_RELEASE_KEYS repository variable (public keys from ridgewarden release-key)"
+            exit 1
+          }
+
+  build:
+    name: Build ${{ matrix.arch }}
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-unknown-linux-musl
+            deb: amd64
+            docker: amd64
+          - arch: aarch64
+            target: aarch64-unknown-linux-musl
+            deb: arm64
+            docker: arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # cross brings the musl C toolchain the bundled SQLite needs, for both arches
+      - name: Install cross
+        run: cargo install cross --locked
+
+      - name: Build
+        env:
+          RIDGEWARDEN_RELEASE_KEYS: ${{ vars.RIDGEWARDEN_RELEASE_KEYS }}
+        # Cross.toml passes the key list into cross's build container
+        run: cross build --release --target ${{ matrix.target }} -p ridgewarden
+
+      - name: Package
+        run: |
+          ver=${{ needs.validate.outputs.version }}
+          bin=target/${{ matrix.target }}/release/ridgewarden
+          file "$bin" | grep -Eq 'statically linked|static-pie linked'
+          mkdir -p dist docker/${{ matrix.docker }}
+
+          name=ridgewarden-v$ver-${{ matrix.arch }}-linux
+          mkdir -p "$name"
+          cp "$bin" packaging/ridgewarden.service README.md LICENSE "$name/"
+          tar -czf "dist/$name.tar.gz" "$name"
+
+          # .deb with dpkg-deb: no extra packaging tools needed
+          root=deb/ridgewarden_${ver}_${{ matrix.deb }}
+          install -D -m 755 "$bin" "$root/usr/bin/ridgewarden"
+          install -D -m 644 packaging/ridgewarden.service "$root/lib/systemd/system/ridgewarden.service"
+          install -D -m 644 LICENSE "$root/usr/share/doc/ridgewarden/copyright"
+          install -D -m 755 packaging/deb/postinst "$root/DEBIAN/postinst"
+          install -D -m 755 packaging/deb/prerm "$root/DEBIAN/prerm"
+          cat > "$root/DEBIAN/control" <<EOF
+          Package: ridgewarden
+          Version: $ver
+          Architecture: ${{ matrix.deb }}
+          Maintainer: Londopy <Londopy@protonmail.com>
+          Homepage: https://github.com/Londopy/ridgewarden
+          Depends: adduser
+          Section: hamradio
+          Priority: optional
+          Description: core agent for AREDN mesh apps
+           Polls the AREDN node on its LAN, keeps a signed log shared with other sites,
+           and serves the local API ridgewarden apps build on.
+          EOF
+          dpkg-deb --root-owner-group --build "$root" "dist/ridgewarden_${ver}_${{ matrix.deb }}.deb"
+
+          cp "$bin" docker/${{ matrix.docker }}/ridgewarden
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.arch }}
+          path: dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docker-${{ matrix.docker }}
+          path: docker/${{ matrix.docker }}/ridgewarden
+
+  release:
+    name: Sign and publish
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      # segno draws the magnet QR codes; setup-python because the runner's system pip refuses installs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # torrents first, so the signed checksums cover them too
+      - name: Torrents
+        run: |
+          # pinned by hash: whatever this step writes into dist/ gets signed below
+          echo 'segno==1.6.6 --hash=sha256:28c7d081ed0cf935e0411293a465efd4d500704072cdb039778a2ab8736190c7' > segno.txt
+          pip install --require-hashes -r segno.txt
+          python3 scripts/release_notes.py torrents ${{ needs.validate.outputs.tag }} dist
+
+      - name: Checksums and signature
+        env:
+          RIDGEWARDEN_RELEASE_KEY: ${{ secrets.RIDGEWARDEN_RELEASE_KEY }}
+        run: |
+          test -n "$RIDGEWARDEN_RELEASE_KEY" || { echo "::error::RIDGEWARDEN_RELEASE_KEY secret is not set"; exit 1; }
+          cp packaging/install.sh packaging/install-all.sh dist/
+          (cd dist && sha256sum -- * > SHA256SUMS.txt)
+          # sign with the x86_64 build we just made, then check it with the same binary
+          tar -xzf dist/ridgewarden-v${{ needs.validate.outputs.version }}-x86_64-linux.tar.gz -C /tmp
+          bin=/tmp/ridgewarden-v${{ needs.validate.outputs.version }}-x86_64-linux/ridgewarden
+          "$bin" release-sign dist/SHA256SUMS.txt
+          "$bin" verify-release dist/SHA256SUMS.txt
+
+      - name: Release page
+        run: python3 scripts/release_notes.py ${{ needs.validate.outputs.tag }} dist
+
+      # publish as a draft first, so `ridgewarden update` never sees a half-uploaded release
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.tag }}
+          name: ridgewarden ${{ needs.validate.outputs.version }}
+          body_path: body.md
+          draft: true
+          prerelease: ${{ contains(needs.validate.outputs.tag, '-') }}
+          files: dist/*
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=${{ needs.validate.outputs.tag }}
+          if [[ "$tag" == *-* ]]; then
+            gh release edit "$tag" --draft=false
+          else
+            gh release edit "$tag" --draft=false --latest
+          fi
+
+  docker:
+    name: Docker image
+    # after release, so an image is only pushed once the signed release went out
+    needs: [validate, build, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.tag }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: docker-*
+          path: docker
+
+      - name: Lay out binaries per architecture
+        run: |
+          for a in amd64 arm64; do
+            mkdir -p ctx/$a
+            cp docker/docker-$a/ridgewarden ctx/$a/ridgewarden
+            chmod 755 ctx/$a/ridgewarden
+          done
+          cp packaging/Dockerfile ctx/
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ctx
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/londopy/ridgewarden:${{ needs.validate.outputs.version }}
+            ${{ !contains(needs.validate.outputs.tag, '-') && 'ghcr.io/londopy/ridgewarden:latest' || '' }}
