@@ -1,0 +1,113 @@
+# A made-up seven-site mesh for ridgewarden-sim. Node names are fictional, not real stations.
+#
+#   lopez --- cuesta --- madonna --- shack
+#                \          /
+#                 black-mtn --- north --- paso
+#
+# cuesta, madonna, black-mtn and north are articulation points; cuesta-lopez, madonna-shack,
+# black-mtn-north and north-paso are bridges. lopez runs 3.x firmware so the older sysinfo shape gets exercised.
+# cuesta-madonna drifts 1 dB a day, like a dish slowly walking off.
+seed = 7
+
+[[node]]
+name = "TST-CUESTA"
+ip = "10.1.0.1"
+lat = 35.33
+lon = -120.62
+[[node.service]]
+name = "Winlink Gateway"
+kind = "tcp"
+
+[[node]]
+name = "TST-MADONNA"
+ip = "10.1.0.2"
+lat = 35.27
+lon = -120.68
+
+[[node]]
+name = "TST-BLACKMTN"
+ip = "10.1.0.3"
+lat = 35.38
+lon = -120.55
+
+[[node]]
+name = "TST-NORTH"
+ip = "10.1.0.4"
+lat = 35.52
+lon = -120.68
+
+[[node]]
+name = "TST-PASO"
+ip = "10.1.0.5"
+lat = 35.63
+lon = -120.69
+[[node.service]]
+name = "Paso Camera"
+
+[[node]]
+name = "TST-LOPEZ"
+ip = "10.1.0.6"
+firmware = "3.25.8.0"
+lat = 35.18
+lon = -120.55
+
+[[node]]
+name = "TST-SHACK"
+ip = "10.1.0.7"
+lat = 35.30
+lon = -120.66
+[[node.service]]
+name = "Club Chat"
+[[node.service]]
+name = "Offline Map"
+
+[[link]]
+a = "TST-CUESTA"
+b = "TST-LOPEZ"
+snr = 18
+
+[[link]]
+a = "TST-CUESTA"
+b = "TST-MADONNA"
+snr = 30
+drift_db_per_day = 1.0
+
+[[link]]
+a = "TST-CUESTA"
+b = "TST-BLACKMTN"
+snr = 27
+
+[[link]]
+a = "TST-MADONNA"
+b = "TST-BLACKMTN"
+snr = 22
+
+[[link]]
+a = "TST-MADONNA"
+b = "TST-SHACK"
+type = "DTD"
+quality = 100
+
+[[link]]
+a = "TST-BLACKMTN"
+b = "TST-NORTH"
+snr = 14
+quality = 92
+
+[[link]]
+a = "TST-NORTH"
+b = "TST-PASO"
+snr = 24
+
+# where agents sit; the sim decides probe reachability from the source address
+[[agent]]
+node = "TST-SHACK"
+source_ip = "127.0.0.2"
+
+[[agent]]
+node = "TST-PASO"
+source_ip = "127.0.0.3"
+
+[[agent]]
+node = "TST-LOPEZ"
+source_ip = "127.0.0.4"
