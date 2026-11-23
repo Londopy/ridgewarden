@@ -1,5 +1,5 @@
 //! Who this site trusts, and the commands that change it: invites, joining, and the
-//! club's signed trust list.
+//! signed trust list.
 
 use std::collections::BTreeMap;
 
@@ -8,7 +8,7 @@ use rusqlite::{OptionalExtension, params};
 use serde_json::json;
 
 use crate::invite::{self, Station, valid_key};
-use crate::log::{Log, club_keys};
+use crate::log::{Log, list_keys};
 use crate::util::now_ms;
 
 /// Last known callsign for a key, from the heads it has written.
@@ -25,15 +25,15 @@ pub fn call_of(log: &Log, key: &str) -> Result<Option<String>> {
         .optional()?)
 }
 
-/// Every trusted station with why: "this station", "config", "invite from X", "club list".
+/// Every trusted station with why: "this station", "config", "invite from X", "trust list".
 pub fn explain(log: &Log, pinned: &[String]) -> Result<Vec<(String, String, String)>> {
     let mut why: BTreeMap<String, String> = BTreeMap::new();
-    if let Some(list) = log.club_list()? {
-        for k in club_keys(&list) {
+    if let Some(list) = log.trust_list()? {
+        for k in list_keys(&list) {
             why.insert(
                 k,
                 format!(
-                    "club list (v{}, by {})",
+                    "trust list (v{}, by {})",
                     list.payload["version"], list.author.call
                 ),
             );
@@ -51,7 +51,7 @@ pub fn explain(log: &Log, pinned: &[String]) -> Result<Vec<(String, String, Stri
         })? {
             let (k, via, provisional) = r?;
             let w = if provisional {
-                format!("listed in {via}'s invite (until the club list arrives)")
+                format!("listed in {via}'s invite (until the trust list arrives)")
             } else {
                 format!("invite from {via}")
             };
@@ -103,8 +103,8 @@ pub fn join(log: &Log, line: &str) -> Result<invite::Invite> {
     {
         let mut c = log.store.conn();
         let tx = c.transaction()?;
-        // only the inviter is trusted to change the club list; the stations it listed are
-        // trusted provisionally, until its club list syncs and takes over
+        // only the inviter is trusted to change the trust list; the stations it listed are
+        // trusted provisionally, until its trust list syncs and takes over
         tx.execute(
             "INSERT INTO local_trust (key, call, via, added_ms, provisional) VALUES (?1, ?2, ?2, ?3, 0)
              ON CONFLICT(key) DO UPDATE SET call = excluded.call, provisional = 0",
@@ -139,15 +139,15 @@ pub fn local_peers(log: &Log) -> Result<Vec<String>> {
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
-/// Publish a new version of the club list with `key` added (or removed).
-pub fn change_club_list(log: &Log, key: &str, call: Option<&str>, add: bool) -> Result<u64> {
+/// Publish a new version of the trust list with `key` added (or removed).
+pub fn change_trust_list(log: &Log, key: &str, call: Option<&str>, add: bool) -> Result<u64> {
     let key = key.trim().to_ascii_lowercase();
     if !valid_key(&key) {
         bail!(
             "{key:?} is not a public key (64 hex digits; see `ridgewarden whoami` on that station)"
         );
     }
-    let current = log.club_list()?;
+    let current = log.trust_list()?;
     let version = current
         .as_ref()
         .and_then(|e| e.payload["version"].as_u64())
@@ -174,7 +174,7 @@ pub fn change_club_list(log: &Log, key: &str, call: Option<&str>, add: bool) -> 
         }
         stations.insert(key, call);
     } else if stations.remove(&key).is_none() {
-        bail!("that key is not on the club list");
+        bail!("that key is not on the trust list");
     }
     let list: Vec<_> = stations
         .into_iter()
@@ -199,16 +199,16 @@ mod tests {
     }
 
     #[test]
-    fn invite_then_club_list_spreads_trust() {
+    fn invite_then_trust_list_spreads_trust() {
         let a = log(1, "N0AAA");
         let b = log(2, "N0BBB");
         let c = log(3, "N0CCC");
-        // a puts b on the club list; c joins with a's invite and syncs a's log
+        // a puts b on the trust list; c joins with a's invite and syncs a's log
         b.ingest(&a.events_after(&a.id.author.key, -1, None, 100).unwrap())
             .unwrap();
         a.ingest(&b.events_after(&b.id.author.key, -1, None, 100).unwrap())
             .unwrap();
-        change_club_list(&a, &b.id.author.key, None, true).unwrap();
+        change_trust_list(&a, &b.id.author.key, None, true).unwrap();
         let line = make_invite(&a, "http://10.0.0.1:8790").unwrap();
         join(&c, &line).unwrap();
         assert!(c.trusted().contains(&a.id.author.key), "the inviter");
@@ -218,16 +218,16 @@ mod tests {
         );
         assert_eq!(local_peers(&c).unwrap(), vec!["http://10.0.0.1:8790"]);
 
-        // a later club-list change by a trusted station reaches c through sync
+        // a later trust-list change by a trusted station reaches c through sync
         let d = log(4, "N0DDD");
-        change_club_list(&a, &d.id.author.key, Some("N0DDD"), true).unwrap();
+        change_trust_list(&a, &d.id.author.key, Some("N0DDD"), true).unwrap();
         c.ingest(&a.events_after(&a.id.author.key, -1, None, 100).unwrap())
             .unwrap();
         assert!(c.trusted().contains(&d.id.author.key));
     }
 
     #[test]
-    fn stations_listed_in_an_invite_cannot_change_the_club_list() {
+    fn stations_listed_in_an_invite_cannot_change_the_trust_list() {
         let a = log(1, "N0AAA");
         let b = log(2, "N0BBB");
         let c = log(3, "N0CCC");
@@ -235,12 +235,12 @@ mod tests {
             .unwrap();
         a.ingest(&b.events_after(&b.id.author.key, -1, None, 100).unwrap())
             .unwrap();
-        change_club_list(&a, &b.id.author.key, None, true).unwrap();
+        change_trust_list(&a, &b.id.author.key, None, true).unwrap();
         join(&c, &make_invite(&a, "http://10.0.0.1:8790").unwrap()).unwrap();
         // a drops b; b, still holding its key, publishes a list adding a stranger
-        change_club_list(&a, &b.id.author.key, None, false).unwrap();
+        change_trust_list(&a, &b.id.author.key, None, false).unwrap();
         let stranger = "ee".repeat(32);
-        change_club_list(&b, &stranger, Some("N0EVIL"), true).unwrap();
+        change_trust_list(&b, &stranger, Some("N0EVIL"), true).unwrap();
         c.ingest(&a.events_after(&a.id.author.key, -1, None, 100).unwrap())
             .unwrap();
         c.ingest(&b.events_after(&b.id.author.key, -1, None, 100).unwrap())
@@ -254,12 +254,12 @@ mod tests {
     }
 
     #[test]
-    fn a_stranger_cannot_rewrite_the_club_list() {
+    fn a_stranger_cannot_rewrite_the_trust_list() {
         let a = log(1, "N0AAA");
         let stranger = log(9, "N0BAD");
         let victim = log(3, "N0CCC");
         victim.set_trusted([a.id.author.key.clone()]);
-        change_club_list(&stranger, &"ee".repeat(32), Some("N0EVIL"), true).unwrap();
+        change_trust_list(&stranger, &"ee".repeat(32), Some("N0EVIL"), true).unwrap();
         victim
             .ingest(
                 &stranger
@@ -272,13 +272,13 @@ mod tests {
     }
 
     #[test]
-    fn removing_from_the_club_list_takes_effect() {
+    fn removing_from_the_trust_list_takes_effect() {
         let a = log(1, "N0AAA");
         let k = "cd".repeat(32);
-        change_club_list(&a, &k, Some("N0XYZ"), true).unwrap();
+        change_trust_list(&a, &k, Some("N0XYZ"), true).unwrap();
         assert!(a.trusted().contains(&k));
-        change_club_list(&a, &k, None, false).unwrap();
+        change_trust_list(&a, &k, None, false).unwrap();
         assert!(!a.trusted().contains(&k));
-        assert!(change_club_list(&a, &k, None, false).is_err());
+        assert!(change_trust_list(&a, &k, None, false).is_err());
     }
 }

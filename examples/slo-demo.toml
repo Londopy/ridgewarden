@@ -57,7 +57,7 @@ ip = "10.1.0.7"
 lat = 35.30
 lon = -120.66
 [[node.service]]
-name = "Club Chat"
+name = "Mesh Chat"
 [[node.service]]
 name = "Offline Map"
 

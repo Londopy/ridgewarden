@@ -81,7 +81,8 @@ async fn page_range(
         if let Some(id) = &cursor.1 {
             q.push(("after_id", id.clone()));
         }
-        let evs: Vec<Event> = get_json(http.get(format!("{base}/v1/events")).query(&q)).await?;
+        let evs: Vec<Event> =
+            get_json(http.get(format!("{base}/v1/events")).query(&q), MAX_BODY).await?;
         let Some(end) = evs.last() else { break };
         // a page must be this author's, in strictly increasing (seq, id) order past the
         // cursor; anything else is a broken peer and we stop asking it.
@@ -103,16 +104,17 @@ async fn page_range(
     Ok(taken)
 }
 
-async fn get_json<T: DeserializeOwned>(req: reqwest::RequestBuilder) -> Result<T> {
+/// GET JSON whose body may be at most `max` bytes.
+pub async fn get_json<T: DeserializeOwned>(req: reqwest::RequestBuilder, max: usize) -> Result<T> {
     let mut resp = req.send().await?.error_for_status()?;
-    if resp.content_length().is_some_and(|n| n as usize > MAX_BODY) {
-        bail!("peer response too large");
+    if resp.content_length().is_some_and(|n| n > max as u64) {
+        bail!("the reply is over {max} bytes");
     }
     // read in chunks so a lying or missing Content-Length can't make us buffer forever
     let mut body = Vec::new();
     while let Some(chunk) = resp.chunk().await? {
         body.extend_from_slice(&chunk);
-        ensure!(body.len() <= MAX_BODY, "peer response too large");
+        ensure!(body.len() <= max, "the reply is over {max} bytes");
     }
     Ok(serde_json::from_slice(&body)?)
 }
@@ -133,7 +135,7 @@ pub async fn pull_from(
     telemetry: bool,
 ) -> Result<IngestReport> {
     let base = base.trim_end_matches('/');
-    let heads: Heads = get_json(http.get(format!("{base}/v1/heads"))).await?;
+    let heads: Heads = get_json(http.get(format!("{base}/v1/heads")), MAX_BODY).await?;
     let mut total = IngestReport::default();
     let mut taken = 0usize;
     // a random subset each time, so chains that sort late are not starved by early ones
@@ -178,7 +180,8 @@ pub async fn pull_from(
                 continue;
             }
             let q = [("author", h.key.clone()), ("seq", seq.to_string())];
-            let evs: Vec<Event> = get_json(http.get(format!("{base}/v1/events")).query(&q)).await?;
+            let evs: Vec<Event> =
+                get_json(http.get(format!("{base}/v1/events")).query(&q), MAX_BODY).await?;
             ensure!(
                 evs.iter()
                     .all(|e| e.chain() == h.key && e.seq as i64 == seq),
@@ -193,6 +196,7 @@ pub async fn pull_from(
             let theirs: Digests = get_json(
                 http.get(format!("{base}/v1/digests"))
                     .query(&[("author", h.key.as_str())]),
+                MAX_BODY,
             )
             .await?;
             ensure!(

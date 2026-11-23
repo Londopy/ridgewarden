@@ -44,8 +44,13 @@ async fn refuse_when_cut(State(cut): State<Arc<AtomicBool>>, req: Request, next:
 }
 
 async fn agent(call: &str, seed: u8) -> Agent {
+    agent_with(call, seed, |_| {}).await
+}
+
+async fn agent_with(call: &str, seed: u8, set: impl FnOnce(&mut Config)) -> Agent {
     let dir = tempfile::tempdir().unwrap();
-    let cfg: Config = toml::from_str(&Config::example(call, dir.path())).unwrap();
+    let mut cfg: Config = toml::from_str(&Config::example(call, dir.path())).unwrap();
+    set(&mut cfg);
     let store = Store::open(&cfg.db_path()).unwrap();
     let log = Log::new(store, Identity::from_seed(call, [seed; 32])).unwrap();
     let app = Arc::new(App::new(cfg, log).unwrap());
@@ -71,6 +76,20 @@ async fn agent(call: &str, seed: u8) -> Agent {
         chunks,
         _dir: dir,
     }
+}
+
+/// `app` served without connection info, the way the local API's gate sees a caller it
+/// can't place as this machine.
+async fn unplaced(app: &Arc<App>) -> String {
+    let router = web::router(app.clone(), Some(TOKEN.into()));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        axum::serve(listener, router.into_make_service())
+            .await
+            .unwrap()
+    });
+    url
 }
 
 impl Agent {
@@ -577,15 +596,7 @@ async fn local_actions_refuse_without_the_token_or_off_this_machine() {
     let right = unwant(&a.url).bearer_auth(TOKEN).send().await.unwrap();
     assert_eq!(right.status(), 404, "past the gate: no such blob");
 
-    // served without connection info, the way the gate sees a caller it can't place
-    let router = web::router(a.app.clone(), Some(TOKEN.into()));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let remote = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move {
-        axum::serve(listener, router.into_make_service())
-            .await
-            .unwrap()
-    });
+    let remote = unplaced(&a.app).await;
     let page = reqwest::get(format!("{remote}/invite?url=http://10.1.2.3:8790"))
         .await
         .unwrap();
@@ -605,6 +616,74 @@ async fn local_actions_refuse_without_the_token_or_off_this_machine() {
             .unwrap();
         assert_eq!(want.status(), if base == &a.url { 401 } else { 403 });
     }
+}
+
+#[tokio::test]
+async fn metrics_are_off_unless_enabled_and_need_the_token() {
+    let a = agent("N0AAA", 1).await;
+    a.write(3, "x");
+    let gone = agent("N0CCC", 3).await;
+    gone.cut.store(true, Ordering::SeqCst);
+    let b = agent_with("N0BBB", 2, |cfg| {
+        cfg.metrics.enabled = true;
+        cfg.sync.peers = vec![a.url.clone(), gone.url.clone()];
+    })
+    .await;
+    sync::round(&b.app).await;
+
+    let http = reqwest::Client::new();
+    let get = |base: &str| http.get(format!("{base}/local/v1/metrics"));
+    let off = get(&a.url).bearer_auth(TOKEN).send().await.unwrap();
+    assert_eq!(off.status(), 404, "off by default");
+    assert_eq!(get(&b.url).send().await.unwrap().status(), 401);
+    let r = get(&b.url).bearer_auth(TOKEN).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    assert!(
+        r.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .starts_with("text/plain; version=0.0.4")
+    );
+    let body = r.text().await.unwrap();
+
+    // every sample belongs to a family announced with HELP and TYPE, and has a number
+    let mut families = BTreeSet::new();
+    for line in body.lines() {
+        if let Some(rest) = line.strip_prefix("# TYPE ") {
+            assert!(rest.ends_with(" gauge"), "{line}");
+            families.insert(rest.trim_end_matches(" gauge").to_string());
+            continue;
+        }
+        if line.starts_with("# HELP ") {
+            continue;
+        }
+        let (series, value) = line.rsplit_once(' ').unwrap();
+        let name = series.split('{').next().unwrap();
+        assert!(families.contains(name), "{line}");
+        value.parse::<f64>().unwrap();
+    }
+    for want in [
+        "ridgewarden_events{log=\"main\"} 5".to_string(),
+        "ridgewarden_trusted_stations 1".into(),
+        format!("ridgewarden_peer_up{{peer=\"{}\",call=\"\"}} 1", a.url),
+        format!("ridgewarden_peer_up{{peer=\"{}\",call=\"\"}} 0", gone.url),
+        "ridgewarden_blobs{state=\"complete\"} 0".into(),
+    ] {
+        assert!(body.lines().any(|l| l == want), "{want} in\n{body}");
+    }
+    let synced = format!("ridgewarden_peer_last_sync_seconds{{peer=\"{}\"", a.url);
+    assert!(body.contains(&synced));
+    assert!(!body.contains(&format!(
+        "ridgewarden_peer_last_sync_seconds{{peer=\"{}\"",
+        gone.url
+    )));
+    assert!(
+        !body.contains("ridgewarden_node_up"),
+        "no poll yet, so no figure"
+    );
+    let remote = unplaced(&b.app).await;
+    let away = get(&remote).bearer_auth(TOKEN).send().await.unwrap();
+    assert_eq!(away.status(), 403, "only for a scraper on this machine");
 }
 
 fn unlimited() -> ridgewarden::blobs::Pace {

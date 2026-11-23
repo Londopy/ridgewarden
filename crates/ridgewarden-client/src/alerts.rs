@@ -33,7 +33,7 @@ pub struct Alert {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(deny_unknown_fields)]
 pub struct AlertCfg {
-    /// e.g. "https://ntfy.sh/my-club-mesh" or a self-hosted "http://10.1.2.3/mesh"
+    /// e.g. "https://ntfy.sh/my-mesh-alerts" or a self-hosted "http://10.1.2.3/mesh"
     #[serde(default)]
     pub ntfy: Option<String>,
     #[serde(default)]

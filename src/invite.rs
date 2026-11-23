@@ -2,7 +2,9 @@
 //!
 //! The payload names the inviting station, where to reach it, and the stations it trusts.
 //! Joining with it means "I trust whoever this station trusts", so a new site needs one
-//! line instead of a list of 64-digit keys.
+//! line instead of a list of 64-digit keys. The payload is canonical JSON; base64url only
+//! keeps the line free of quotes and braces, so it pastes into a shell or a chat message
+//! as it is. `join` shows what it says before anything is trusted.
 
 use anyhow::{Context, Result, bail, ensure};
 use ed25519_dalek::{Signature, Signer, VerifyingKey};

@@ -12,6 +12,8 @@ pub mod config;
 pub mod diff;
 pub mod identity;
 pub mod log;
+pub mod metrics;
+pub mod node;
 pub mod store;
 pub mod sync;
 pub mod web;

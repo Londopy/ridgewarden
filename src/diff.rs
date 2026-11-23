@@ -1,12 +1,12 @@
-//! "What changed" (spec 00, M0): compare this node's sysinfo now against a day ago.
+//! "What changed" (spec 00, M0): compare this node as it was polled now against a day ago.
 
 use std::collections::BTreeSet;
 
 use anyhow::Result;
-use rusqlite::{Connection, OptionalExtension, params};
-use serde_json::Value;
+use rusqlite::Connection;
 
-use crate::aredn::{self, NodeObs};
+use crate::aredn::NodeObs;
+use crate::node;
 
 pub struct Changes {
     pub from_ts: i64,
@@ -15,46 +15,19 @@ pub struct Changes {
     pub lines: Vec<String>,
 }
 
-fn snapshot(conn: &Connection, sql: &str, p: i64) -> Result<Option<(i64, NodeObs)>> {
-    let row: Option<(i64, String)> = conn
-        .query_row(sql, params![p], |r| Ok((r.get(0)?, r.get(1)?)))
-        .optional()?;
-    Ok(match row {
-        Some((ts, raw)) => serde_json::from_str::<Value>(&raw)
-            .ok()
-            .and_then(|v| aredn::parse(&v).ok())
-            .map(|o| (ts, o)),
-        None => None,
-    })
-}
-
 fn list(xs: &BTreeSet<String>) -> String {
     xs.iter().cloned().collect::<Vec<_>>().join(", ")
 }
 
-/// Changes over the last `hours`, or None if there's no older snapshot to compare with.
+/// Changes over the last `hours`, or None if there's no older poll to compare with.
 pub fn changes(conn: &Connection, now: i64, hours: i64) -> Result<Option<Changes>> {
-    let Some((to_ts, new)) = snapshot(
-        conn,
-        "SELECT ts, raw FROM snapshots WHERE ok = 1 AND ts <= ?1 ORDER BY ts DESC LIMIT 1",
-        now,
-    )?
-    else {
+    let Some((to_ts, new)) = node::seen_by(conn, now)? else {
         return Ok(None);
     };
-    let cutoff = now - hours * 3_600_000;
-    let old = match snapshot(
-        conn,
-        "SELECT ts, raw FROM snapshots WHERE ok = 1 AND ts <= ?1 ORDER BY ts DESC LIMIT 1",
-        cutoff,
-    )? {
+    let old = match node::seen_by(conn, now - hours * 3_600_000)? {
         Some(o) => Some(o),
         // not a full day of history yet: compare with the oldest we have
-        None => snapshot(
-            conn,
-            "SELECT ts, raw FROM snapshots WHERE ok = 1 AND ts > ?1 ORDER BY ts LIMIT 1",
-            i64::MIN,
-        )?,
+        None => node::first_seen(conn)?,
     };
     let Some((from_ts, old)) = old.filter(|(ts, _)| *ts < to_ts) else {
         return Ok(None);
