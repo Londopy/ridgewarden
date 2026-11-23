@@ -12,6 +12,8 @@ pub mod event;
 pub mod graph;
 pub mod mesh;
 pub mod svg;
+#[cfg(feature = "tui")]
+pub mod tui;
 pub mod ui;
 pub mod util;
 

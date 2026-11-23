@@ -23,7 +23,7 @@ use std::time::Instant;
 use anyhow::{Result, bail};
 use ridgewarden_client::core::FeedItem;
 use ridgewarden_client::event::chain_id;
-use rusqlite::{OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -52,6 +52,9 @@ pub struct Log {
     pub store: Store,
     pub id: Identity,
     lamport: Mutex<u64>,
+    /// `mono_time` is this database's clock: where it had got to when the log was opened,
+    /// plus how long this process has run
+    mono_base: u64,
     started: Instant,
     /// keys pinned in config
     pinned: RwLock<BTreeSet<String>>,
@@ -97,6 +100,33 @@ CREATE TABLE IF NOT EXISTS heads (
     max_seq    INTEGER NOT NULL,
     digest     TEXT NOT NULL DEFAULT ''
 );";
+
+/// How far this database's monotonic clock has got: what the last append saved, or the
+/// newest of our own events if that is further on, as after restoring an old copy of the
+/// database and syncing our newer events back from peers, or in a database from before
+/// the clock was saved.
+fn saved_mono(c: &Connection, key: &str) -> Result<u64> {
+    let mut newest: u64 = c
+        .query_row("SELECT v FROM meta WHERE k = 'mono'", [], |r| {
+            r.get::<_, String>(0)
+        })
+        .optional()?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    for chain in [key.to_string(), chain_id(key, Some(TELEMETRY))] {
+        let m: Option<i64> = c
+            .query_row(
+                "SELECT json_extract(json, '$.mono_time') FROM events WHERE chain = ?1
+                 ORDER BY seq DESC LIMIT 1",
+                params![chain],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        newest = newest.max(m.unwrap_or(0).max(0) as u64);
+    }
+    Ok(newest)
+}
 
 /// The author key a chain belongs to.
 pub fn author_of(chain: &str) -> &str {
@@ -238,7 +268,7 @@ fn record(tx: &Transaction, e: &Event) -> Result<()> {
 }
 
 /// The station keys a `trust.list` event names.
-pub fn club_keys(e: &Event) -> Vec<String> {
+pub fn list_keys(e: &Event) -> Vec<String> {
     e.payload
         .get("stations")
         .and_then(Value::as_array)
@@ -264,18 +294,20 @@ fn policy(e: &Event) -> Result<()> {
 impl Log {
     /// Open the log for this identity, writing its `identity.bind` event on first run.
     pub fn new(store: Store, id: Identity) -> Result<Self> {
-        let lamport: i64 = {
+        let (lamport, mono_base): (i64, u64) = {
             let c = store.conn();
             c.execute_batch(HEADS_SCHEMA)?;
-            c.query_row("SELECT coalesce(max(lamport), 0) FROM events", [], |r| {
+            let lamport = c.query_row("SELECT coalesce(max(lamport), 0) FROM events", [], |r| {
                 r.get(0)
-            })?
+            })?;
+            (lamport, saved_mono(&c, &id.author.key)? + 1)
         };
         let trusted = RwLock::new([id.author.key.clone()].into_iter().collect());
         let log = Self {
             store,
             id,
             lamport: Mutex::new((lamport.max(0) as u64).min(MAX_LAMPORT)),
+            mono_base,
             started: Instant::now(),
             trusted,
             pinned: RwLock::new(BTreeSet::new()),
@@ -314,7 +346,7 @@ impl Log {
     }
 
     /// Stations we trust directly: ourselves, keys pinned in config, and keys from
-    /// accepted invites. Only these can change the club list.
+    /// accepted invites. Only these can change the trust list.
     fn base_trust(&self) -> Result<BTreeSet<String>> {
         let mut base = self
             .pinned
@@ -330,9 +362,9 @@ impl Log {
         Ok(base)
     }
 
-    /// The club's trust list: the newest `trust.list` event written by a station we trust
+    /// The trust list: the newest `trust.list` event written by a station we trust
     /// directly and whose key hasn't been revoked.
-    pub fn club_list(&self) -> Result<Option<Event>> {
+    pub fn trust_list(&self) -> Result<Option<Event>> {
         let base = self.base_trust()?;
         let c = self.store.conn();
         let mut st = c.prepare(
@@ -350,12 +382,12 @@ impl Log {
         Ok(None)
     }
 
-    /// Recompute who apps believe: everyone we trust directly, plus the club list. Until a
-    /// club list has arrived, stations an accepted invite listed count too.
+    /// Recompute who apps believe: everyone we trust directly, plus the trust list. Until a
+    /// trust list has arrived, stations an accepted invite listed count too.
     pub fn refresh_trust(&self) -> Result<()> {
         let mut trusted = self.base_trust()?;
-        match self.club_list()? {
-            Some(list) => trusted.extend(club_keys(&list)),
+        match self.trust_list()? {
+            Some(list) => trusted.extend(list_keys(&list)),
             None => {
                 let c = self.store.conn();
                 let mut st = c.prepare("SELECT key FROM local_trust WHERE provisional = 1")?;
@@ -470,13 +502,20 @@ impl Log {
             *l = next;
             next
         };
+        // past whatever another process (a CLI command) last wrote, too
+        let mono = (self.mono_base + self.started.elapsed().as_millis() as u64)
+            .max(saved_mono(&tx, &self.id.author.key)? + 1);
+        tx.execute(
+            "INSERT INTO meta (k, v) VALUES ('mono', ?1) ON CONFLICT(k) DO UPDATE SET v = excluded.v",
+            params![mono.to_string()],
+        )?;
         let ev = Draft {
             author: self.id.author.clone(),
             seq,
             prev,
             lamport,
             wall_time: ms_to_rfc3339(wall_ms),
-            mono_time: self.started.elapsed().as_millis() as u64,
+            mono_time: mono,
             kind: kind.to_string(),
             payload,
             log: log.map(str::to_string),
@@ -880,6 +919,50 @@ mod tests {
         assert_eq!(b.prev.as_deref(), Some(a.id.as_str()));
         assert!(b.lamport > a.lamport);
         assert_eq!(l.contiguous(&l.id.author.key).unwrap(), 2);
+    }
+
+    #[test]
+    fn mono_time_keeps_counting_across_restarts() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("ridgewarden.db");
+        let open = || {
+            Log::new(
+                Store::open(&db).unwrap(),
+                Identity::from_seed("N0AAA", [1; 32]),
+            )
+            .unwrap()
+        };
+        let before = {
+            let l = open();
+            std::thread::sleep(std::time::Duration::from_millis(30));
+            l.append_telemetry("node.poll", json!({})).unwrap()
+        };
+        let l = open();
+        let after = l.append("x", json!({})).unwrap();
+        assert!(after.mono_time > before.mono_time, "{after:?} {before:?}");
+
+        // a second writer on the same database, like a CLI command, never goes backwards
+        let cli = open();
+        let a = l.append("x", json!({})).unwrap();
+        let b = cli.append("x", json!({})).unwrap();
+        let c = l.append("x", json!({})).unwrap();
+        assert!(a.mono_time < b.mono_time && b.mono_time < c.mono_time);
+
+        // a database from before the clock was saved, or whose saved clock is behind its
+        // newest event, goes on from that event
+        for saved in [None, Some("5")] {
+            let c = l.append("x", json!({})).unwrap();
+            let conn = l.store.conn();
+            conn.execute("DELETE FROM meta WHERE k = 'mono'", [])
+                .unwrap();
+            if let Some(v) = saved {
+                conn.execute("INSERT INTO meta (k, v) VALUES ('mono', ?1)", [v])
+                    .unwrap();
+            }
+            drop(conn);
+            let d = open().append("x", json!({})).unwrap();
+            assert!(d.mono_time > c.mono_time, "saved {saved:?}");
+        }
     }
 
     #[test]

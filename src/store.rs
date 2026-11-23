@@ -1,8 +1,8 @@
 //! SQLite storage for the core.
 //!
 //! Events are the source of truth. The core only keeps what it needs itself (the log,
-//! revocations, its node's raw snapshots, and which lists it has shipped); apps build
-//! their own views from the core's feed.
+//! revocations, its node's polls, and which lists it has shipped); apps build their own
+//! views from the core's feed.
 
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     before INTEGER NOT NULL
 );
 
--- raw sysinfo responses from this agent's own node; local only, never synced
+-- raw sysinfo replies from this agent's own node (parsed copies are in node_polls); local
+-- only, never synced
 CREATE TABLE IF NOT EXISTS snapshots (
     id      INTEGER PRIMARY KEY,
     node    TEXT NOT NULL,
@@ -86,7 +87,7 @@ CREATE TABLE IF NOT EXISTS local_trust (
     call        TEXT NOT NULL,
     via         TEXT NOT NULL,
     added_ms    INTEGER NOT NULL,
-    -- 1: listed in an invite, trusted only until the club list arrives; can't change it
+    -- 1: listed in an invite, trusted only until the trust list arrives; can't change it
     provisional INTEGER NOT NULL DEFAULT 0
 );
 
@@ -116,7 +117,7 @@ impl Store {
         Self::init(Connection::open_in_memory()?)
     }
 
-    fn init(conn: Connection) -> Result<Self> {
+    fn init(mut conn: Connection) -> Result<Self> {
         // WAL + FULL: every commit is on disk before we hand the event to anyone. NORMAL
         // could lose the last commits in a power cut, and then this agent would reuse
         // sequence numbers its peers already hold (a self-inflicted fork). One fsync per
@@ -127,7 +128,9 @@ impl Store {
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(SCHEMA)?;
         conn.execute_batch(crate::blobs::SCHEMA)?;
+        conn.execute_batch(crate::node::SCHEMA)?;
         crate::blobs::migrate(&conn)?;
+        crate::node::backfill(&mut conn)?;
         let have: bool = conn.query_row(
             "SELECT count(*) > 0 FROM meta WHERE k = 'instance'",
             [],

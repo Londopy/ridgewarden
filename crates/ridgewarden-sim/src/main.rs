@@ -1,9 +1,11 @@
 //! ridgewarden-sim: a fake AREDN mesh on one port.
 //!
 //! every simulated node answers `GET /n/<node>/a/sysinfo` with JSON shaped like the
-//! firmware's `files/app/main/sysinfo.ut` (api_version 2.0). nodes with a 3.x firmware
-//! string answer in the older `link_info` style without `lqm`, so the agent's tolerant
-//! parsing gets exercised against both. services live at `/svc/<node>/<name>`.
+//! firmware's `files/app/main/sysinfo.ut` (api_version 2.0), and redirects the old
+//! `/cgi-bin/sysinfo.json` there, as 4.x does. nodes with a 3.x firmware string answer the
+//! way 3.25.8.0 does instead: `/cgi-bin/sysinfo.json` (api_version 1.14, OLSR `link_info`,
+//! services by address) and an HTML page at `/a/sysinfo`. services live at
+//! `/svc/<node>/<name>`.
 //!
 //! reachability is computed from the live link graph: a probe from a vantage only
 //! succeeds if the vantage's node can still reach the service's node. the vantage is
@@ -22,12 +24,12 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::Parser;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 #[derive(Parser)]
 #[command(version, about = "Fake AREDN mesh for testing ridgewarden")]
@@ -228,106 +230,55 @@ impl Sim {
 
     fn sysinfo(&mut self, name: &str, q: &str) -> Value {
         let spec = self.node(name).cloned().expect("checked by caller");
-        let legacy = spec.firmware.starts_with('3');
-        let days = self.started.elapsed().as_secs_f64() / 86_400.0;
+        let legacy = legacy(&spec);
         let comp = self.component(&spec.name);
-
-        let mut info = json!({
-            "api_version": "2.0",
-            "node": spec.name,
-            "ip": spec.ip,
-            "node_details": {
-                "model": spec.model.clone().unwrap_or_else(|| "Ubiquiti Rocket 5AC Lite".into()),
-                "firmware_mfg": "AREDN",
-                "firmware_version": spec.firmware,
-                "mesh_gateway": false,
-                "mesh_supernode": false,
-            },
-            "meshrf": {"status": "on", "mode": "adhoc", "channel": 140, "chanbw": "10", "freq": "5.700"},
-            "sysinfo": {"uptime": "3 days, 4:05", "loads": [0.1, 0.05, 0.01], "freememory": "40000"},
-            "interfaces": [{"name": "br-lan", "ip": spec.ip}],
-        });
-        if let (Some(lat), Some(lon)) = (spec.lat, spec.lon) {
-            info["lat"] = json!(lat);
-            info["lon"] = json!(lon);
-        }
-
-        // links that touch this node
-        let now_s = self.now_s();
-        let mine: Vec<(LinkSpec, f64)> = self
-            .sc
-            .links
-            .iter()
-            .filter(|l| l.a == spec.name || l.b == spec.name)
-            .filter_map(|l| {
-                if self.link_up(l) {
-                    return Some((l.clone(), now_s));
-                }
-                // dead: 3.x drops it at once; 4.x keeps the tracker for a day
-                let since = *self.down_at.get(&key(&l.a, &l.b))?;
-                (!legacy && now_s - since < 86_400.0).then(|| (l.clone(), since))
+        let mut info = if legacy {
+            json!({
+                "api_version": "1.14",
+                "node": spec.name,
+                "node_details": {
+                    "model": spec.model.clone().unwrap_or_else(|| "Ubiquiti Rocket M5".into()),
+                    "board_id": "0xe6b5",
+                    "firmware_mfg": "AREDN",
+                    "firmware_version": spec.firmware,
+                    "mesh_gateway": "0",
+                },
+                "meshrf": {"status": "on", "mode": "adhoc", "ssid": "AREDN-10-v3", "channel": "177", "chanbw": "10", "freq": "5885"},
+                "tunnels": {"active_tunnel_count": 0, "legacy_tunnel_count": 0, "wireguard_tunnel_count": 0},
+                "sysinfo": {"uptime": "3 days, 4:05:22", "loads": [0.1, 0.05, 0.01]},
+                "interfaces": [{"name": "wlan0", "ip": spec.ip}],
             })
-            .collect();
-        let mut link_info = serde_json::Map::new();
-        let mut trackers = serde_json::Map::new();
-        for (i, (l, lastseen)) in mine.iter().enumerate() {
-            let other = if l.a == spec.name { &l.b } else { &l.a };
-            let Some(o) = self.node(other).cloned() else {
-                continue;
-            };
-            let jitter = (self.next() - 0.5) * 2.0;
-            let snr = (l.snr - l.drift_db_per_day * days + jitter)
-                .max(0.0)
-                .round();
-            let noise = -95.0;
-            let signal = noise + snr;
-            let q = (l.quality + (self.next() - 0.5) * 4.0)
-                .clamp(0.0, 100.0)
-                .round();
-            let rtt = (2.0 + self.next() * 3.0).round();
-            if legacy {
-                // older shape: OLSR-era names that 3.x nodes still carry in some builds
-                link_info.insert(
-                    o.ip.clone(),
-                    json!({
-                        "hostname": o.name,
-                        "linkType": l.link_type,
-                        "olsrInterface": "wlan0",
-                        "linkQuality": q / 100.0,
-                        "neighborLinkQuality": q / 100.0,
-                        "signal": if l.link_type == "RF" { json!(signal) } else { Value::Null },
-                        "noise": if l.link_type == "RF" { json!(noise) } else { Value::Null },
-                        "tx_rate": 130,
-                        "rx_rate": 117,
-                    }),
-                );
+        } else {
+            json!({
+                "api_version": "2.0",
+                "node": spec.name,
+                "ip": spec.ip,
+                "node_details": {
+                    "model": spec.model.clone().unwrap_or_else(|| "Ubiquiti Rocket 5AC Lite".into()),
+                    "firmware_mfg": "AREDN",
+                    "firmware_version": spec.firmware,
+                    "mesh_gateway": false,
+                    "mesh_supernode": false,
+                },
+                "meshrf": {"status": "on", "mode": "adhoc", "channel": 140, "chanbw": "10", "freq": "5.700"},
+                "sysinfo": {"uptime": "3 days, 4:05", "loads": [0.1, 0.05, 0.01], "freememory": "40000"},
+                "interfaces": [{"name": "br-lan", "ip": spec.ip}],
+            })
+        };
+        if let (Some(lat), Some(lon)) = (spec.lat, spec.lon) {
+            // 3.x reads them from uci and sends strings
+            info["lat"] = if legacy {
+                json!(lat.to_string())
             } else {
-                let mut d =
-                    json!({"hostname": o.name, "linkType": l.link_type, "interface": "wlan0"});
-                if l.link_type == "RF" {
-                    d["signal"] = json!(signal);
-                    d["noise"] = json!(noise);
-                }
-                link_info.insert(o.ip.clone(), d);
-                let mac = format!("02:00:00:00:{:02x}:{:02x}", i / 256, i % 256);
-                let mut t = json!({
-                    "mac": mac, "ip": o.ip, "canonical_ip": o.ip, "hostname": o.name,
-                    "type": l.link_type, "device": "wlan0",
-                    "lq": q, "avg_lq": q, "quality": q, "rev_quality": q,
-                    "rtt": rtt, "tx_quality": q, "ping_quality": 100,
-                    "tx_bitrate": 130.0, "rx_bitrate": 117.0,
-                    "tx_packets": 100000, "tx_fail": ((100.0 - q) * 10.0) as i64, "tx_retries": 500,
-                    "metric": 256, "routable": true, "route_count": 3,
-                    "lastseen": lastseen,
-                });
-                if l.link_type == "RF" {
-                    t["signal"] = json!(signal);
-                    t["snr"] = json!(snr);
-                    t["rev_snr"] = json!(snr);
-                }
-                trackers.insert(mac, t);
-            }
+                json!(lat)
+            };
+            info["lon"] = if legacy {
+                json!(lon.to_string())
+            } else {
+                json!(lon)
+            };
         }
+        let (link_info, trackers) = self.links(&spec, legacy);
         if q.contains("link_info=1") {
             info["link_info"] = Value::Object(link_info);
         }
@@ -348,8 +299,9 @@ impl Sim {
                     if self.svc_hidden.contains(&(n.name.clone(), s.name.clone())) {
                         continue;
                     }
-                    let proto = "tcp";
-                    out.push(json!({"name": s.name, "ip": n.name, "link": self.service_link(&n.name, s), "protocol": proto}));
+                    // 3.x names the advertising node by address, 4.x by name
+                    let ip = if legacy { &n.ip } else { &n.name };
+                    out.push(json!({"name": s.name, "ip": ip, "link": self.service_link(&n.name, s), "protocol": "tcp"}));
                 }
             }
             info["services"] = json!(out);
@@ -362,31 +314,181 @@ impl Sim {
                 .collect();
             info["services_local"] = json!(out);
         }
-        if q.contains("lqm=1") && !legacy {
+        if q.contains("lqm=1") {
             info["lqm"] = json!({
                 "enabled": true,
                 "config": {"user_blocks": ""},
-                "info": {"trackers": Value::Object(trackers), "hidden_nodes": [], "now": now_s},
+                "info": {"trackers": Value::Object(trackers), "hidden_nodes": [], "now": self.now_s()},
             });
         }
         info
     }
+
+    /// This node's `link_info` and LQM trackers. A dead neighbor's tracker stays listed
+    /// for a day with its old `lastseen` on both firmware lines; 3.x's OLSR drops the link
+    /// itself at once, and `link_info` then shows only the tracker's copy.
+    fn links(&mut self, spec: &NodeSpec, legacy: bool) -> (Map<String, Value>, Map<String, Value>) {
+        let days = self.started.elapsed().as_secs_f64() / 86_400.0;
+        let now_s = self.now_s();
+        let mine: Vec<(LinkSpec, f64, bool)> = self
+            .sc
+            .links
+            .iter()
+            .filter(|l| l.a == spec.name || l.b == spec.name)
+            .filter_map(|l| {
+                if self.link_up(l) {
+                    return Some((l.clone(), now_s, true));
+                }
+                let since = *self.down_at.get(&key(&l.a, &l.b))?;
+                (now_s - since < 86_400.0).then(|| (l.clone(), since, false))
+            })
+            .collect();
+        let mut link_info = Map::new();
+        let mut trackers = Map::new();
+        for (i, (l, lastseen, up)) in mine.iter().enumerate() {
+            let other = if l.a == spec.name { &l.b } else { &l.a };
+            let Some(o) = self.node(other).cloned() else {
+                continue;
+            };
+            let jitter = (self.next() - 0.5) * 2.0;
+            let snr = (l.snr - l.drift_db_per_day * days + jitter)
+                .max(0.0)
+                .round();
+            let noise = -95.0;
+            let signal = noise + snr;
+            let q = (l.quality + (self.next() - 0.5) * 4.0)
+                .clamp(0.0, 100.0)
+                .round();
+            let rtt = (2.0 + self.next() * 3.0).round();
+            let rf = l.link_type == "RF";
+            let mac = format!("02:00:00:00:{:02x}:{:02x}", i / 256, i % 256);
+            if legacy {
+                // mgr/lqm.lua's names for the link types, and the devices they run on
+                let (lqm_type, device) = match l.link_type.as_str() {
+                    "RF" => ("RF", "wlan0"),
+                    "TUN" => ("Tunnel", "tun50"),
+                    _ => ("DtD", "br-dtdlink"),
+                };
+                if *up {
+                    // aredn/olsr.lua getCurrentNeighbors: OLSR's link, plus iwinfo for RF
+                    let mut d = json!({
+                        "hostname": o.name,
+                        "olsrInterface": device,
+                        "linkType": l.link_type,
+                        "linkQuality": q / 100.0,
+                        "neighborLinkQuality": q / 100.0,
+                        "currentLinkStatus": "SYMMETRIC",
+                        "linkCost": (100.0 / q.max(1.0) * 100.0).round() / 100.0,
+                    });
+                    if rf {
+                        d["signal"] = json!(signal);
+                        d["noise"] = json!(noise);
+                        d["tx_rate"] = json!(26);
+                        d["rx_rate"] = json!(19.5);
+                    }
+                    link_info.insert(o.ip.clone(), d);
+                } else {
+                    // sysinfo.json adds every tracker OLSR doesn't list
+                    link_info.insert(
+                        o.ip.clone(),
+                        json!({"linkType": lqm_type.to_uppercase(), "hostname": o.name.to_lowercase(), "interface": device}),
+                    );
+                }
+                // mgr/lqm.lua keeps no signal, only its running SNR
+                let mut t = json!({
+                    "type": lqm_type, "device": device,
+                    "mac": mac, "ip": o.ip, "canonical_ip": o.ip, "hostname": o.name.to_lowercase(),
+                    "user_blocks": false, "ping_quality": 100, "quality": q, "rev_quality": q,
+                    "node_route_count": 3, "babel_route_count": 0, "routable": *up,
+                    "lastseen": lastseen,
+                });
+                if rf {
+                    t["snr"] = json!(snr);
+                    t["tx_quality"] = json!(q);
+                    t["tx_bitrate"] = json!(26.0);
+                    t["rx_bitrate"] = json!(19.5);
+                }
+                trackers.insert(mac, t);
+                continue;
+            }
+            let mut d = json!({"hostname": o.name, "linkType": l.link_type, "interface": "wlan0"});
+            if rf {
+                d["signal"] = json!(signal);
+                d["noise"] = json!(noise);
+            }
+            link_info.insert(o.ip.clone(), d);
+            let mut t = json!({
+                "mac": mac, "ip": o.ip, "canonical_ip": o.ip, "hostname": o.name,
+                "type": l.link_type, "device": "wlan0",
+                "lq": q, "avg_lq": q, "quality": q, "rev_quality": q,
+                "rtt": rtt, "tx_quality": q, "ping_quality": 100,
+                "tx_bitrate": 130.0, "rx_bitrate": 117.0,
+                "tx_packets": 100000, "tx_fail": ((100.0 - q) * 10.0) as i64, "tx_retries": 500,
+                "metric": 256, "routable": true, "route_count": 3,
+                "lastseen": lastseen,
+            });
+            if rf {
+                t["signal"] = json!(signal);
+                t["snr"] = json!(snr);
+                t["rev_snr"] = json!(snr);
+            }
+            trackers.insert(mac, t);
+        }
+        (link_info, trackers)
+    }
 }
 
+fn legacy(spec: &NodeSpec) -> bool {
+    spec.firmware.starts_with('3')
+}
+
+/// `/a/sysinfo`: 4.x's sysinfo. 3.x has no such page, and its web UI answers with the HTML
+/// app page it shows for any page it doesn't know.
 async fn sysinfo(
     State(s): State<Shared>,
     Path(node): Path<String>,
     raw: axum::extract::RawQuery,
 ) -> Response {
     let mut sim = s.lock().unwrap();
-    let Some(spec) = sim.node(&node).cloned() else {
-        return (StatusCode::NOT_FOUND, "no such node").into_response();
+    let spec = match answering(&sim, &node) {
+        Ok(spec) => spec,
+        Err(r) => return r.into_response(),
+    };
+    if legacy(&spec) {
+        return Html(
+            "<!DOCTYPE html><html><head><title>sysinfo</title></head><body></body></html>",
+        )
+        .into_response();
+    }
+    Json(sim.sysinfo(&spec.name, &raw.0.unwrap_or_default())).into_response()
+}
+
+/// `/cgi-bin/sysinfo.json`: 3.x's sysinfo; 4.x redirects it to `/a/sysinfo`.
+async fn sysinfo_json(
+    State(s): State<Shared>,
+    Path(node): Path<String>,
+    raw: axum::extract::RawQuery,
+) -> Response {
+    let mut sim = s.lock().unwrap();
+    let spec = match answering(&sim, &node) {
+        Ok(spec) => spec,
+        Err(r) => return r.into_response(),
+    };
+    let q = raw.0.unwrap_or_default();
+    if !legacy(&spec) {
+        return Redirect::temporary(&format!("/n/{node}/a/sysinfo?{q}")).into_response();
+    }
+    Json(sim.sysinfo(&spec.name, &q)).into_response()
+}
+
+fn answering(sim: &Sim, node: &str) -> Result<NodeSpec, (StatusCode, &'static str)> {
+    let Some(spec) = sim.node(node).cloned() else {
+        return Err((StatusCode::NOT_FOUND, "no such node"));
     };
     if sim.node_down.contains(&spec.name) {
-        return (StatusCode::SERVICE_UNAVAILABLE, "node down").into_response();
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "node down"));
     }
-    let q = raw.0.unwrap_or_default();
-    Json(sim.sysinfo(&spec.name, &q)).into_response()
+    Ok(spec)
 }
 
 async fn service(
@@ -532,6 +634,7 @@ async fn main() -> Result<()> {
     let shared: Shared = Arc::new(Mutex::new(sim));
     let app = Router::new()
         .route("/n/{node}/a/sysinfo", get(sysinfo))
+        .route("/n/{node}/cgi-bin/sysinfo.json", get(sysinfo_json))
         .route("/svc/{node}/{name}", get(service))
         .route("/_ctl/state", get(state))
         .route("/_ctl/{what}", post(ctl))

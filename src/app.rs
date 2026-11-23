@@ -2,21 +2,20 @@
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::params;
 use serde_json::{Value, json};
 
 use crate::aredn::{self, NodeObs, SYSINFO_QUERY, Service};
 use crate::config::Config;
 use crate::event::Event;
 use crate::event::list_hash;
-use crate::log::Log;
+use crate::log::{Log, MAX_EVENT_BYTES};
+use crate::node;
 use crate::util::{norm_node, now_ms, valid_node};
-
-/// Snapshots are kept long enough for the daily "what changed" diff and a bit of history.
-const SNAPSHOT_KEEP_MS: i64 = 8 * 86_400_000;
 
 /// Service names that mark another ridgewarden agent.
 pub const SERVICE_PREFIX: &str = "ridgewarden";
@@ -25,6 +24,11 @@ const MAX_ADVERTS_PER_POLL: usize = 8;
 const ADVERT_RETRY_MS: i64 = 3_600_000;
 /// Peers learned from adverts, at most; configured and joined peers don't count.
 const MAX_DISCOVERED: usize = 32;
+/// Where nodes serve sysinfo: 4.x at /a/sysinfo, 3.x only at /cgi-bin/sysinfo.json (which
+/// 4.x redirects to /a/sysinfo).
+const SYSINFO_PATHS: [&str; 2] = ["/a/sysinfo", "/cgi-bin/sysinfo.json"];
+/// Biggest sysinfo reply read. A mesh of 3,000 nodes answers in about 1 MB.
+const MAX_SYSINFO: usize = 8 << 20;
 
 #[derive(Clone, Debug)]
 pub struct Peer {
@@ -48,6 +52,12 @@ pub struct App {
     pub node_name: Mutex<Option<String>>,
     /// adverts that didn't verify, and when; retried after a while, not every poll
     failed_adverts: Mutex<BTreeMap<String, i64>>,
+    /// which of SYSINFO_PATHS last answered, per node base URL
+    sysinfo_path: Mutex<BTreeMap<String, usize>>,
+    /// said once already that the node's sysinfo version is one we don't know
+    warned_api: AtomicBool,
+    /// said once already that a list is too big to share
+    warned_list: AtomicBool,
 }
 
 impl App {
@@ -56,6 +66,7 @@ impl App {
             .no_proxy()
             .timeout(Duration::from_secs(cfg.node.timeout_s))
             .user_agent(concat!("ridgewarden/", env!("CARGO_PKG_VERSION")))
+            .redirect(reqwest::redirect::Policy::custom(same_host))
             .build()?;
         let joined = crate::trust::local_peers(&log)?;
         let peers = cfg
@@ -79,15 +90,7 @@ impl App {
                 )
             })
             .collect();
-        let node_name = {
-            let c = log.store.conn();
-            c.query_row(
-                "SELECT node FROM snapshots WHERE ok = 1 ORDER BY ts DESC LIMIT 1",
-                [],
-                |r| r.get(0),
-            )
-            .optional()?
-        };
+        let node_name = node::last_name(&log.store.conn())?;
         Ok(Self {
             blobs: crate::blobs::Store::new(cfg.blob_dir())?,
             blob_http: reqwest::Client::builder()
@@ -104,6 +107,9 @@ impl App {
             peers: Mutex::new(peers),
             node_name: Mutex::new(node_name),
             failed_adverts: Mutex::new(BTreeMap::new()),
+            sysinfo_path: Mutex::new(BTreeMap::new()),
+            warned_api: AtomicBool::new(false),
+            warned_list: AtomicBool::new(false),
         })
     }
 
@@ -121,13 +127,33 @@ impl App {
     }
 
     async fn fetch(&self, url: &str) -> Result<Value> {
-        let r = self.http.get(url).send().await?.error_for_status()?;
-        Ok(r.json::<Value>().await?)
+        crate::sync::get_json(self.http.get(url), MAX_SYSINFO).await
     }
 
-    /// Hash a list and say whether peers already have it. Lists (the mesh's services and
-    /// hosts) rarely change, so they ride along in an event only when they do; every poll
-    /// carries the hash so readers can look the list up.
+    /// A node's sysinfo, from whichever path its firmware serves it on.
+    async fn sysinfo(&self, base: &str, query: &str) -> Result<Value> {
+        let base = base.trim_end_matches('/');
+        let url = |i: usize| format!("{base}{}?{query}", SYSINFO_PATHS[i]);
+        let first = self
+            .sysinfo_path
+            .lock()
+            .unwrap()
+            .get(base)
+            .copied()
+            .unwrap_or(0);
+        match self.fetch(&url(first)).await {
+            Ok(v) => return Ok(v),
+            Err(e) if !wrong_path(&e) => return Err(e),
+            Err(_) => {}
+        }
+        let v = self.fetch(&url(1 - first)).await?;
+        self.sysinfo_path
+            .lock()
+            .unwrap()
+            .insert(base.to_string(), 1 - first);
+        Ok(v)
+    }
+
     /// The hash of a service or host list, publishing the list itself (once, in the main
     /// chain, which is never pruned) the first time it is seen. Polls carry only the hash.
     fn list_ref<T: serde::Serialize>(&self, list: &T) -> Result<String> {
@@ -139,14 +165,31 @@ impl App {
             params![self.log.id.author.key, hash],
             |r| r.get(0),
         )?;
-        if !known {
-            self.log
-                .append("mesh.list", json!({"hash": hash, "list": v}))?;
+        if known {
+            return Ok(hash);
         }
+        let payload = json!({"hash": hash, "list": v});
+        // the rest of the event needs well under 4 KB
+        let size = payload.to_string().len();
+        if size <= MAX_EVENT_BYTES - 4096 {
+            self.log.append("mesh.list", payload)?;
+            return Ok(hash);
+        }
+        // too big for one event: keep it for this site's own pages rather than fail the poll
+        if !self.warned_list.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                "the node's service or host list is {size} bytes, more than one event holds; this site keeps it, but other sites won't get it"
+            );
+        }
+        let mut c = self.log.store.conn();
+        let tx = c.transaction()?;
+        ridgewarden_client::mesh::store_list(&tx, &payload)?;
+        tx.commit()?;
         Ok(hash)
     }
 
-    fn poll_payload(&self, obs: &NodeObs, via: &str, full: bool) -> Result<Value> {
+    /// A `node.poll` payload; `lists` only for this site's own node, whose lists are shared.
+    fn poll_payload(obs: &NodeObs, via: &str, lists: Option<&node::ListHashes>) -> Value {
         let mut payload = json!({
             "node": obs.node,
             "ok": true,
@@ -161,12 +204,9 @@ impl App {
             "trackers": obs.trackers,
             "stale_skipped": obs.stale_skipped,
         });
-        if full {
-            payload["ads_hash"] = json!(self.list_ref(&obs.services)?);
-            let mut hosts = obs.hosts.clone();
-            hosts.sort();
-            hosts.dedup();
-            payload["hosts_hash"] = json!(self.list_ref(&hosts)?);
+        if let Some(l) = lists {
+            payload["ads_hash"] = json!(l.services);
+            payload["hosts_hash"] = json!(l.hosts);
             payload["local_services"] = json!(
                 obs.services_local
                     .iter()
@@ -174,48 +214,61 @@ impl App {
                     .collect::<Vec<_>>()
             );
         }
-        Ok(payload)
+        payload
     }
 
-    /// Fetch sysinfo from our node, keep the raw snapshot, and log a `node.poll` event.
+    /// Run `f` in one transaction on the core's database.
+    fn in_tx(&self, f: impl FnOnce(&rusqlite::Transaction) -> Result<()>) -> Result<()> {
+        let mut c = self.log.store.conn();
+        let tx = c.transaction()?;
+        f(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Fetch sysinfo from our node, keep it raw and parsed, and log a `node.poll` event. A
+    /// poll that goes wrong anywhere is logged as one the node didn't answer, with why.
     pub async fn poll_once(&self) -> Result<Event> {
-        let url = format!(
-            "{}/a/sysinfo?{}",
-            self.cfg.node.url.trim_end_matches('/'),
-            SYSINFO_QUERY
-        );
         let now = now_ms();
-        let v = match self.fetch(&url).await {
-            Ok(v) => v,
-            Err(e) => {
-                let node = self.node_name();
-                self.log.store.conn().execute(
-                    "INSERT INTO snapshots (node, ts, ok, raw) VALUES (?1, ?2, 0, NULL)",
-                    params![node, now],
-                )?;
-                tracing::warn!("poll of {url} failed: {e:#}");
-                return self.log.append_telemetry(
-                    "node.poll",
-                    json!({"node": node, "ok": false, "via": "lan", "error": short_err(&e)}),
-                );
-            }
+        let e = match self.poll_node(now).await {
+            Ok(ev) => return Ok(ev),
+            Err(e) => e,
         };
+        let node = self.node_name();
+        let error = short_err(&e);
+        self.in_tx(|tx| {
+            node::record_failed(tx, now, &node, &error)?;
+            node::prune(tx, now)
+        })?;
+        tracing::warn!("poll of {} failed: {e:#}", self.cfg.node.url);
+        self.log.append_telemetry(
+            "node.poll",
+            json!({"node": node, "ok": false, "via": "lan", "error": error}),
+        )
+    }
+
+    async fn poll_node(&self, now: i64) -> Result<Event> {
+        let v = self.sysinfo(&self.cfg.node.url, SYSINFO_QUERY).await?;
         let obs = aredn::parse(&v).context("parsing sysinfo")?;
-        *self.node_name.lock().unwrap() = Some(obs.node.clone());
-        {
-            let c = self.log.store.conn();
-            c.execute(
-                "INSERT INTO snapshots (node, ts, ok, raw) VALUES (?1, ?2, 1, ?3)",
-                params![obs.node, now, v.to_string()],
-            )?;
-            c.execute(
-                "DELETE FROM snapshots WHERE ts < ?1",
-                params![now - SNAPSHOT_KEEP_MS],
-            )?;
+        if obs.api == aredn::Api::Unknown && !self.warned_api.swap(true, Ordering::Relaxed) {
+            tracing::warn!(
+                "{} reports sysinfo api_version {:?}, which this version of ridgewarden doesn't know; reading the fields of both 3.x and 4.x",
+                obs.node,
+                obs.api_version.as_deref().unwrap_or("(none)")
+            );
         }
+        *self.node_name.lock().unwrap() = Some(obs.node.clone());
+        let lists = node::ListHashes {
+            services: self.list_ref(&obs.services)?,
+            hosts: self.list_ref(&node::host_list(&obs))?,
+        };
+        self.in_tx(|tx| {
+            node::record_ok(tx, now, &v, &obs, &lists)?;
+            node::prune(tx, now)
+        })?;
         let ev = self
             .log
-            .append_telemetry("node.poll", self.poll_payload(&obs, "lan", true)?)?;
+            .append_telemetry("node.poll", Self::poll_payload(&obs, "lan", Some(&lists)))?;
         if self.cfg.sync.discover {
             self.discover(&obs.services).await;
         }
@@ -230,14 +283,17 @@ impl App {
         anyhow::ensure!(valid_node(&node), "not a node name: {node:?}");
         let node = node.as_str();
         let base = self.cfg.crawl.url_template.replace("{node}", node);
-        let url = format!("{}/a/sysinfo?link_info=1&lqm=1", base.trim_end_matches('/'));
-        match self.fetch(&url).await {
-            Ok(v) => {
-                let obs = aredn::parse(&v).context("parsing sysinfo")?;
-                self.log.append_telemetry("node.poll", self.poll_payload(&obs, "crawl", false)?)
-            }
-            Err(e) => self.log.append_telemetry("node.poll",
-                json!({"node": norm_node(node), "ok": false, "via": "crawl", "error": short_err(&e)}),
+        let polled = async {
+            let v = self.sysinfo(&base, "link_info=1&lqm=1").await?;
+            aredn::parse(&v).context("parsing sysinfo")
+        };
+        match polled.await {
+            Ok(obs) => self
+                .log
+                .append_telemetry("node.poll", Self::poll_payload(&obs, "crawl", None)),
+            Err(e) => self.log.append_telemetry(
+                "node.poll",
+                json!({"node": node, "ok": false, "via": "crawl", "error": short_err(&e)}),
             ),
         }
     }
@@ -327,6 +383,28 @@ pub async fn verify_peer(http: &reqwest::Client, base: &str) -> Result<Event> {
         "not an identity event"
     );
     Ok(bind)
+}
+
+/// 4.x answers the old sysinfo path with a redirect to the new one. Polls, crawls and
+/// sync share this client: it follows a redirect at most twice, and never to another host.
+fn same_host(a: reqwest::redirect::Attempt) -> reqwest::redirect::Action {
+    let same = a.previous().first().is_some_and(|u| {
+        u.host_str() == a.url().host_str()
+            && u.port_or_known_default() == a.url().port_or_known_default()
+    });
+    if same && a.previous().len() < 3 {
+        a.follow()
+    } else {
+        a.stop()
+    }
+}
+
+/// The node answered, but not with sysinfo: 404, or (3.x asked for /a/sysinfo) the HTML
+/// page its web UI shows for any page it doesn't have.
+fn wrong_path(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<serde_json::Error>().is_some()
+        || e.downcast_ref::<reqwest::Error>()
+            .is_some_and(|r| r.status() == Some(reqwest::StatusCode::NOT_FOUND))
 }
 
 /// "http://host:port/anything" -> "http://host:port"
