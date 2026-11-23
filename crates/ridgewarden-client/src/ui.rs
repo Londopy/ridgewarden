@@ -90,11 +90,15 @@ pub struct Page<'a> {
     pub refresh: bool,
 }
 
+/// The suite's tab icon, inline so pages make no extra request for it.
+pub const ICON: &str = "<link rel=icon href=\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M0 14 6 4l3 5 2-3 5 8z' fill='%231e7b34'/%3E%3C/svg%3E\">";
+
 impl Page<'_> {
     pub fn render(&self, title: &str, body: &str) -> String {
         let mut h = String::with_capacity(body.len() + 2500);
         h.push_str("<!doctype html><html lang=en><head><meta charset=utf-8>");
         h.push_str("<meta name=viewport content=\"width=device-width,initial-scale=1\">");
+        h.push_str(ICON);
         if self.refresh {
             h.push_str("<meta http-equiv=refresh content=60>");
         }

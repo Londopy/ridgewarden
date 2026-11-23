@@ -8,7 +8,9 @@ use crate::util::{esc, short_time};
 
 const W: f64 = 640.0;
 const H: f64 = 170.0;
-const LEFT: f64 = 46.0;
+const MIN_LEFT: f64 = 46.0;
+/// The margin never takes more than a third of the chart, however long a label is.
+const MAX_LEFT: f64 = W / 3.0;
 const RIGHT: f64 = 8.0;
 const TOP: f64 = 18.0;
 const BOTTOM: f64 = 22.0;
@@ -76,40 +78,50 @@ impl Chart {
             );
             return s;
         };
+        let ticks: Vec<(f64, String)> = [
+            hi - (hi - lo) * 0.08,
+            (hi + lo) / 2.0,
+            lo + (hi - lo) * 0.08,
+        ]
+        .into_iter()
+        .map(|v| {
+            let text = if self.unit.is_empty() {
+                nice(v)
+            } else {
+                format!("{} {}", nice(v), self.unit)
+            };
+            (v, text)
+        })
+        .collect();
+        // labels are right-aligned against the frame, so long ones need a wider margin
+        let widest = ticks
+            .iter()
+            .map(|(_, t)| t.chars().count())
+            .max()
+            .unwrap_or(0);
+        let left = (6.5 * widest as f64 + 8.0).clamp(MIN_LEFT, MAX_LEFT);
         let span = (self.to - self.from).max(1) as f64;
-        let x = |t: i64| LEFT + (t - self.from) as f64 / span * (W - LEFT - RIGHT);
+        let x = |t: i64| left + (t - self.from) as f64 / span * (W - left - RIGHT);
         let y = |v: f64| TOP + (hi - v) / (hi - lo) * (H - TOP - BOTTOM);
 
         let _ = write!(
             s,
-            "<rect class=frame x=\"{LEFT}\" y=\"{TOP}\" width=\"{}\" height=\"{}\"/>",
-            W - LEFT - RIGHT,
+            "<rect class=frame x=\"{left}\" y=\"{TOP}\" width=\"{}\" height=\"{}\"/>",
+            W - left - RIGHT,
             H - TOP - BOTTOM
         );
-        for v in [
-            hi - (hi - lo) * 0.08,
-            (hi + lo) / 2.0,
-            lo + (hi - lo) * 0.08,
-        ] {
+        for (v, text) in &ticks {
             let _ = write!(
                 s,
                 "<text class=axis x=\"{}\" y=\"{:.1}\" text-anchor=end>{}</text>",
-                LEFT - 4.0,
-                y(v) + 4.0,
-                esc(&format!(
-                    "{}{}",
-                    nice(v),
-                    if self.unit.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" {}", self.unit)
-                    }
-                ))
+                left - 4.0,
+                y(*v) + 4.0,
+                esc(text)
             );
         }
         let _ = write!(
             s,
-            "<text class=axis x=\"{LEFT}\" y=\"{}\">{}</text>",
+            "<text class=axis x=\"{left}\" y=\"{}\">{}</text>",
             H - 6.0,
             esc(&short_time(self.from))
         );
@@ -124,7 +136,7 @@ impl Chart {
         if let Some((r, label)) = &self.rule {
             let _ = write!(
                 s,
-                "<line class=rule x1=\"{LEFT}\" x2=\"{}\" y1=\"{:.1}\" y2=\"{:.1}\"><title>{}</title></line>",
+                "<line class=rule x1=\"{left}\" x2=\"{}\" y1=\"{:.1}\" y2=\"{:.1}\"><title>{}</title></line>",
                 W - RIGHT,
                 y(*r),
                 y(*r),
@@ -178,7 +190,7 @@ impl Chart {
             );
         }
         if self.lines.len() > 1 {
-            let mut lx = LEFT + 4.0;
+            let mut lx = left + 4.0;
             for (i, line) in self.lines.iter().enumerate() {
                 let _ = write!(
                     s,
@@ -275,5 +287,30 @@ mod tests {
         assert!(!svg.contains("<b"));
         let s = strip(&[(Color::Red, "<down>".into())]);
         assert!(s.contains("&lt;down&gt;") && s.contains("bred"));
+    }
+
+    fn frame_x(svg: &str) -> f64 {
+        let rest = svg.split("class=frame x=\"").nth(1).unwrap();
+        rest.split('"').next().unwrap().parse().unwrap()
+    }
+
+    #[test]
+    fn long_axis_labels_get_room_left_of_the_frame() {
+        let chart = |unit: &str, v: f64| Chart {
+            from: 0,
+            to: 10,
+            unit: unit.into(),
+            lines: vec![Line {
+                label: "n".into(),
+                points: vec![(0, v), (10, v - 1.5)],
+            }],
+            ..Default::default()
+        };
+        assert_eq!(frame_x(&chart("", 5.0).render("short")), MIN_LEFT);
+        // "-94.0 dBm" is 9 characters, about 58 px at the axis font size
+        let wide = frame_x(&chart("dBm", -94.0).render("noise"));
+        assert!(wide >= 6.5 * 9.0 + 8.0, "frame starts at {wide}");
+        let unit = "packets per second over the backbone".repeat(4);
+        assert_eq!(frame_x(&chart(&unit, 5.0).render("long")), MAX_LEFT);
     }
 }
