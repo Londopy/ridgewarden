@@ -52,6 +52,7 @@ pub fn router(app: Arc<App>, token: Option<String>) -> Router {
         .route("/local/v1/blob/export", post(blob_export))
         .route("/local/v1/blob/add", post(blob_add))
         .route("/local/v1/blob/unwant", post(blob_unwant))
+        .route("/local/v1/metrics", get(metrics))
         .route("/v1/chunk/{hash}", get(chunk))
         .route("/v1/blobs", get(blob_list))
         .with_state(Ctx {
@@ -79,8 +80,6 @@ impl<E: Into<anyhow::Error>> From<E> for Fail {
 }
 
 type R<T> = Result<T, Fail>;
-
-// ---------------------------------------------------------------- sync API (peers)
 
 async fn heads(State(c): S) -> R<Json<Value>> {
     Ok(Json(json!({"heads": c.app.log.heads()?})))
@@ -129,8 +128,6 @@ async fn digests(State(c): S, Query(q): Query<DigestsQ>) -> R<Json<Value>> {
 async fn identity(State(c): S) -> R<Json<Event>> {
     Ok(Json(c.app.log.bind_event()?))
 }
-
-// ---------------------------------------------------------------- local API (apps)
 
 #[derive(Deserialize)]
 struct FeedQ {
@@ -489,7 +486,23 @@ async fn append(
     Ok(Json(ev))
 }
 
-// ---------------------------------------------------------------- pages
+async fn metrics(State(c): S, peer: Peer, headers: HeaderMap) -> R<Response> {
+    if !c.app.cfg.metrics.enabled {
+        return Err(Fail(
+            StatusCode::NOT_FOUND,
+            "metrics are off on this agent ([metrics] enabled = true turns them on)".into(),
+        ));
+    }
+    local_ok(&c, &peer, &headers)?;
+    Ok((
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        crate::metrics::render(&c.app)?,
+    )
+        .into_response())
+}
 
 /// `refresh`: reload every minute, for pages people leave open.
 fn page(app: &App, title: &str, active: &str, body: &str, refresh: bool) -> Html<String> {
@@ -520,14 +533,7 @@ async fn overview(State(c): S) -> R<Html<String>> {
     let (events, last_poll) = {
         let conn = app.log.store.conn();
         let events: i64 = conn.query_row("SELECT count(*) FROM events", [], |r| r.get(0))?;
-        let last_poll: Option<(i64, bool)> = conn
-            .query_row(
-                "SELECT ts, ok FROM snapshots ORDER BY ts DESC LIMIT 1",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .ok();
-        (events, last_poll)
+        (events, crate::node::last_poll(&conn)?)
     };
     let heads = app.log.heads()?;
     let forks = app.log.fork_count()?;
@@ -644,7 +650,7 @@ async fn overview(State(c): S) -> R<Html<String>> {
     }
 
     if trusted.len() <= 1 {
-        b.push_str("<p class=mute>This site trusts only itself, so apps show only its own data. Join a club with <code>ridgewarden join</code> and an invite from one of its sites, or make one for a new site on the <a href=\"/invite\">invite page</a>.</p>");
+        b.push_str("<p class=mute>This site trusts only itself, so apps show only its own data. Join the other sites with <code>ridgewarden join</code> and an invite from one of them, or make one for a new site on the <a href=\"/invite\">invite page</a>.</p>");
     }
 
     b.push_str("<h2>Stations in the log</h2><div class=wrap><table><tr><th>Callsign</th><th>Key</th><th>Trusted</th><th>Events</th><th>Telemetry kept</th></tr>");
@@ -686,8 +692,8 @@ fn disk_section(b: &mut String, u: &crate::usage::Usage) {
          <tr><td>Main log (kept)</td><td>{}</td><td>{}</td><td>{}</td></tr>\
          <tr><td>Telemetry ({} days)</td><td>{}</td><td>{}</td><td>{}</td></tr>\
          <tr><td>Blobs</td><td>{} chunks</td><td>{}</td><td>whatever this site fetches</td></tr>\
-         <tr><td>Database file</td><td></td><td>{}</td><td>events, indexes, 8 days of raw node snapshots</td></tr>\
-         <tr><td>Exports, imports, updates</td><td></td><td>{}</td><td></td></tr>\
+         <tr><td>Database file</td><td></td><td>{}</td><td>events, indexes, the node's polls (8 days parsed, 2 raw)</td></tr>\
+         <tr><td>Exports, imports</td><td></td><td>{}</td><td></td></tr>\
          <tr><th>Total on disk</th><td></td><th>{}</th><td></td></tr></table></div>\
          <p class=\"mute small\">Event sizes are their JSON, as synced. Rates come from the last \
          week of events; telemetry levels off once {} days have passed, if other stations keep \
@@ -758,7 +764,7 @@ async fn invite_page(State(c): S, peer: Peer, Query(q): Query<InviteQ>) -> R<Res
     let others = app.log.trusted().len().saturating_sub(1);
     let _ = write!(
         b,
-        "<p>Scan this on the new site's phone, or copy the line under it. On the new site run <code>ridgewarden join &lt;line&gt;</code>. Accepting it means the new site trusts {} to say who is in the club, trusts the {others} other station(s) this site trusts until the club list arrives, and syncs with {}.</p>",
+        "<p>Scan this on the new site's phone, or copy the line under it. On the new site run <code>ridgewarden join &lt;line&gt;</code>. Accepting it means the new site trusts {} to say who is on the trust list, trusts the {others} other station(s) this site trusts until the trust list arrives, and syncs with {}.</p>",
         esc(&app.log.id.author.call),
         esc(&url)
     );

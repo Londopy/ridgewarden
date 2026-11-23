@@ -30,6 +30,8 @@ pub struct Config {
     pub retention: RetentionCfg,
     #[serde(default)]
     pub blobs: BlobsCfg,
+    #[serde(default)]
+    pub metrics: MetricsCfg,
     /// apps running next to this core, linked from its dashboard
     #[serde(default, rename = "app")]
     pub apps: Vec<AppLink>,
@@ -37,7 +39,7 @@ pub struct Config {
 
 /// Whose events the apps believe. Every signed event is stored and relayed regardless;
 /// this only decides what the apps build their pages from. This station's own key is
-/// always trusted. Add the public keys (`ridgewarden whoami`) of the other club agents.
+/// always trusted. Add the public keys (`ridgewarden whoami`) of the other sites' agents.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(deny_unknown_fields)]
 pub struct TrustCfg {
@@ -108,6 +110,15 @@ impl BlobsCfg {
     }
 }
 
+/// `GET /local/v1/metrics`, the agent's numbers in Prometheus' text format. Off unless
+/// enabled, and like the rest of the local API it answers only on loopback, with the token.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(deny_unknown_fields)]
+pub struct MetricsCfg {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
 /// How long this station keeps its own telemetry (polls, probes) before a checkpoint lets
 /// every site prune it. Everything else is kept.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -130,7 +141,7 @@ fn d_30() -> u64 {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct NodeCfg {
-    /// base URL of the node; `/a/sysinfo` is appended
+    /// base URL of the node; `/a/sysinfo` (4.x) or `/cgi-bin/sysinfo.json` (3.x) is appended
     #[serde(default = "d_node_url")]
     pub url: String,
     /// AREDN asks that you agree a schedule with the node's owner. 60 s is the floor.
@@ -354,7 +365,7 @@ nodes = []
 follow_links = false
 
 [trust]
-# public keys of the other club agents whose data the apps should believe
+# public keys of the other sites' agents whose data the apps should believe
 # (run `ridgewarden whoami` on each); this station's own key is always trusted
 keys = []
 blocked = []
@@ -371,6 +382,11 @@ auto_want = ["ridgewarden-release/"]
 [retention]
 # your own polls and probes are pruned everywhere after this many days
 telemetry_days = 30
+
+[metrics]
+# GET /local/v1/metrics in Prometheus' text format, for a scraper on this machine that
+# sends local.token as a bearer token, like an app (the token can also sign events)
+enabled = false
 
 # apps running next to this core, linked from its dashboard
 # [[app]]
