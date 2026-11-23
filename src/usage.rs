@@ -31,7 +31,7 @@ pub struct Usage {
     pub blob_bytes: u64,
     /// the database file with its write-ahead log
     pub db_bytes: u64,
-    /// exported blobs, files apps put up for publishing, and unpacked updates
+    /// exported blobs and files apps put up for publishing
     pub files_bytes: u64,
     pub telemetry_days: u64,
 }
@@ -130,7 +130,7 @@ pub fn measure(app: &App) -> Result<Usage> {
     let wal = db.with_extension("db-wal");
     let (blob_chunks, blob_bytes) = app.blobs.disk_use()?;
     let mut files_bytes = 0;
-    for d in ["exports", "imports", "update"] {
+    for d in ["exports", "imports"] {
         files_bytes += tree_len(&app.cfg.data_dir.join(d))?;
     }
     Ok(Usage {
