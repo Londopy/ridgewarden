@@ -2,9 +2,9 @@
 
 Repo: `ridgewarden` | Reviewed 2026-11-19 | Status: version 1 built, not yet released
 
-Built: poller (3.x and 4.x), signed log with forks and revocation, pull-only sync with fork and digest repair, telemetry sub-log with signed checkpoints (change 1), invites with a QR code in the terminal and on the dashboard's invite page (change 4), the signed trust list (change 5), blob store with per-blob status, unwant, preferred source peers per blob, with an only-these-peers mode, and per-peer rate caps (the core side of app 04's topology-aware fan-out and per-link rate limits), `trackers` and `stale_skipped` in `node.poll` so apps can tell a partial poll, signed updates, packaging, `ridgewarden status` and the dashboard's disk use per class (main log, telemetry, blobs, other files) with the main log's yearly growth and where telemetry levels off, and 20 seeded forced-partition drills with pruning in CI (`tests/drills.rs`).
+Built: poller (3.x and 4.x: it finds each node's sysinfo path, `/a/sysinfo` or 3.x's `/cgi-bin/sysinfo.json`, and reads the reply by its `api_version`, tested against a 3.25.8.0 reply built from that release's source), the site's own polls kept parsed beside the raw replies, signed log with forks and revocation, pull-only sync with fork and digest repair, telemetry sub-log with signed checkpoints (change 1), invites (one `rw1.` line: canonical JSON in base64url, so it pastes into a shell or a chat without quoting) with a QR code in the terminal and on the dashboard's invite page (change 4), the signed trust list (change 5), blob store with per-blob status, unwant, preferred source peers per blob, with an only-these-peers mode, and per-peer rate caps (the core side of app 04's topology-aware fan-out and per-link rate limits), `trackers` and `stale_skipped` in `node.poll` so apps can tell a partial poll, signed updates, packaging, `ridgewarden status` and the dashboard's disk use per class (main log, telemetry, blobs, other files) with the main log's yearly growth and where telemetry levels off, 20 seeded forced-partition drills with pruning in CI (`tests/drills.rs`), a `mono_time` that carries on across restarts, tests that kill a writer mid-append and cut the write-ahead log short like a power cut (`tests/crash.rs`), tests of `update` from a local server and from the mesh, working in a folder only root can open and leaving the old binary alone on every failure (`tests/update.rs`), an optional Prometheus metrics endpoint on the local API, and `ridgewarden top`.
 
-Not done: changes 2 and 3 and the 2-of-3 release root keys (the spec waits for users to ask; what each takes is under "Later"); change 6, range-based reconciliation (left on purpose; why is under "Later"); the Meshtastic, MeshCore and Reticulum bridges (other projects' code and radios to test with); the Build-a-Pi menu entry (lives in Build-a-Pi's repo); the plugin API (apps are separate programs on the local API instead); per-peer rates derived from link quality (the PHY rates in link polls overstate what a shared RF link carries, so rates are set by hand); a free-disk-space call for apps (no portable way in std without a new crate); the ten-minute join and the 13-site 1 GB measures need a real club mesh, though `ridgewarden status` and the dashboard now show the numbers to check them.
+Not done: changes 2 and 3 and the 2-of-3 release root keys (the spec waits for users to ask; what each takes is under "Later"); change 6, range-based reconciliation (left on purpose; why is under "Later"); the Meshtastic, MeshCore and Reticulum bridges (other projects' code and radios to test with); the Build-a-Pi menu entry (lives in Build-a-Pi's repo); an in-process plugin API (apps plug in as separate programs on the local API, so a crashing app can't take down the process that signs for the station); key rotation that keeps a station's chain (change 3's device keys are the planned answer; today a station revokes its key and joins again with a new one); advertising the agent on the node automatically (an advert is a node setting, and the agent never writes to the node); per-peer rates derived from link quality (the PHY rates in link polls overstate what a shared RF link carries, so rates are set by hand); a free-disk-space call for apps (no portable way in std without a new crate); the ten-minute join and the 13-site 1 GB measures need a real mesh, though `ridgewarden status` and the dashboard now show the numbers to check them; nothing has run on a real node, Pi or mesh yet, and the partitions, crashes and power cuts in the tests are simulated.
 
 ## What it is
 
@@ -12,7 +12,7 @@ One small Rust program on a Raspberry Pi (or any Linux box) on an AREDN node's L
 
 ## Who it's for
 
-Every club that installs any ridgewarden app. Nobody installs the core for its own sake; the app installers pull it in.
+Every mesh group that installs any ridgewarden app. Nobody installs the core for its own sake; the app installers pull it in.
 
 ## What exists today
 
@@ -21,7 +21,7 @@ Every club that installs any ridgewarden app. Nobody installs the core for its o
 | Secure Scuttlebutt (SSB) | Per-author signed append-only logs, gossip replication. The closest design to ours. | Logs only ever grew until compaction was bolted on; onboarding was its biggest complaint; partial replication came late. Not used on AREDN. |
 | p2panda (Rust) | Per-author logs with a prune point; targets radio and sneakernet transports | General framework, no AREDN knowledge |
 | Hypercore / Holepunch | Sparse replication, explicit fork ids | Built for the internet; pruning had replication bugs |
-| Willow / Earthstar | Partial sync by path, prefix deletion, a "drop" format for sneakernet | Young; capability model is more than a club needs |
+| Willow / Earthstar | Partial sync by path, prefix deletion, a "drop" format for sneakernet | Young; capability model is more than a mesh group needs |
 | Iroh docs | Range-based set reconciliation, separate blob transfer | Internet-oriented |
 | Reticulum / LXMF | Mature store-and-forward over many transports | Encryption is mandatory for relayed traffic, which Part 97 doesn't allow on ham RF |
 | Nostr (HAMSTR) | Signed events, already tried over ham radio | Relay-centric, no topology knowledge |
@@ -40,9 +40,9 @@ Nothing found runs on AREDN or knows AREDN's topology. The new part is not the s
 
 1. **Retention from day one.** Each event kind gets a class: telemetry (polls, probes) expires after 30 days by default; summaries, alerts, receipts and identity events are kept. A signed "checkpoint" event lets an author mark everything before sequence N as prunable, and a local purge list stops pruned data being fetched again. SSB's main lesson is that a log with no pruning hits a wall.
 2. **Sub-logs by class.** Each author's events are split into classes (telemetry, app data, blob index) so a slow link or a car can carry only what it's told to. Sync negotiates per class.
-3. **Station and device keys.** A station's root key (held offline by the licensee) signs device keys for each Pi. Replacing a dead Pi or recovering from a stolen SD card no longer forks a chain or needs every other club member to edit their trust list.
-4. **Invites.** `ridgewarden invite` prints a single line and QR code holding the club's trusted-key list, peer addresses and the inviting station's signature. The joining site's screen says plainly what accepting it means.
-5. **Signed trust list.** The club's list of trusted stations is itself a signed, versioned event that any listed station can update, instead of a list each site edits by hand.
+3. **Station and device keys.** A station's root key (held offline by the licensee) signs device keys for each Pi. Replacing a dead Pi or recovering from a stolen SD card no longer forks a chain or needs every other site to edit its trust list.
+4. **Invites.** `ridgewarden invite` prints a single line and QR code holding the trusted-key list, peer addresses and the inviting station's signature. The joining site's screen says plainly what accepting it means.
+5. **Signed trust list.** The list of trusted stations is itself a signed, versioned event that any listed station can update, instead of a list each site edits by hand.
 6. **Set reconciliation for big meshes.** Keep heads, paging and digest repair for v1. When a mesh has hundreds of authors, switch the digest step to range-based reconciliation (as in Willow and Iroh).
 
 ## Version 1 scope
@@ -59,7 +59,7 @@ Built for v1 in the second pass:
 ## Later
 
 - **Sub-logs by class (change 2)**, if v1 users ask. v1 has one class split out (telemetry). More classes need: a `log` value per class (`app`, `blobidx`) that `append` picks by kind; a `[sync] classes = [...]` setting that `pull_from` checks against each head's `key:log` suffix, the way `telemetry = false` already skips `:telemetry`; checkpoints per class with their own retention; and apps saying which class an event goes in on `/local/v1/append`. The chain format already allows it (`chain_id(key, Some(log))`), so old peers keep syncing.
-- **Station and device keys (change 3)**, if v1 users ask. Needs: a station root key made and kept offline (`ridgewarden station-key`), a signed `identity.device` event from the root naming each Pi's key, trust and the club list keyed by the root rather than the device, and revocation of one device without touching the others. Feed trust then checks "device listed by a trusted root and not revoked" instead of "key trusted". The hard part is the offline signing step for non-technical operators, which needs testing with real users first.
+- **Station and device keys (change 3)**, if v1 users ask. Needs: a station root key made and kept offline (`ridgewarden station-key`), a signed `identity.device` event from the root naming each Pi's key, trust and the trust list keyed by the root rather than the device, and revocation of one device without touching the others. Feed trust then checks "device listed by a trusted root and not revoked" instead of "key trusted". The hard part is the offline signing step for non-technical operators, which needs testing with real users first.
 - **2-of-3 offline root keys for releases.** Needs three root keys held by different people, a signed `release-keys` document listing the current release keys that any two roots sign, `update` checking that document (shipped in the release and in the binary) before trusting a release key, and a version number on the document so it can only move forward. Worth doing before more than one person can publish releases.
 - **Range-based reconciliation (change 6), left on purpose.** Each peer's heads cost about 230 bytes per chain, two chains per station: 6 KB for 13 sites, 90 KB for 200 stations, 0.9 MB at the 2000-author cap, every sync round per peer. Reconciling the heads by ranges (fingerprint ranges of chains, recurse only into ranges that differ, fall back to `/v1/heads` for old peers) only saves bytes for chains that didn't change since the last round. Every station writes telemetry every poll (5 minutes by default) and sync runs every 2 minutes, so about half the chains change between rounds and nearly every range differs; the saving would be small for the added protocol. It pays off once main-log chains are reconciled separately from telemetry chains (which needs change 2's class split) or meshes reach thousands of mostly idle stations. The hard limit today is the 4.5 MB response cap, which `/v1/heads` reaches near 10,000 stations. The drills in `tests/drills.rs` are the test it would have to pass.
 - **Bridges:** import Meshtastic/MeshCore message-board history as signed events; an optional Reticulum bridge for unlicensed segments only, disabled on Part 97 RF. These belong in their own programs on the local API, and need the radios to build and test against.
@@ -75,12 +75,12 @@ Built for v1 in the second pass:
 ## Risks
 
 - Pruning bugs: Hypercore shipped one that broke replication. Pruning needs the same forced-partition tests as sync. (The drills in `tests/drills.rs` prune under random partitions and check nothing else is lost.)
-- Key handling for non-technical hams. Invites and station keys exist to answer this; test them with real club members.
+- Key handling for non-technical hams. Invites and station keys exist to answer this; test them with real operators.
 - Disk wear on SD cards. Recommend an SSD for hub sites; keep telemetry retention short by default.
 
 ## Success measures
 
-- A new site joins a club mesh in under ten minutes with one invite. (Needs a real club to time.)
+- A new site joins a mesh group in under ten minutes with one invite. (Needs a real mesh group to time.)
 - 20 forced partition drills, zero lost events, every site identical afterwards. (Checked on every test run: `tests/drills.rs`, seeded, with forks, flaky links and telemetry pruning.)
 - Log size on a 13-site mesh stays under 1 GB per site at default retention. (`ridgewarden status` and the dashboard show size per class and where telemetry levels off; needs a real mesh to confirm.)
 

@@ -2,9 +2,9 @@
 
 Repo: `ridgewarden-sdr` | Reviewed 2026-11-19 | Status: version 1 built, not yet released
 
-Built: receiver directory and offline map from signed events; Part 97 band filtering with `check-owrx` and the two-instance OpenWebRX+ setup; coordinated signal-strength capture; TDOA from RTL-SDR IQ snippets aligned on an amateur reference transmitter with drift removal, GCC-PHAT and quality gating, solved at 3+ sites; KrakenSDR bearings from the "Kraken App" output; one fix from all three with a 95% error ellipse, ring-of-receivers and ambiguity warnings; the weekly beacon test publishing miss distance, with an accuracy page; success measures shown in the app (sites listening, neighborhood-sized fixes, miss-distance trend).
+Built: receiver directory and offline map from signed events; Part 97 band filtering with `check-owrx` and the two-instance OpenWebRX+ setup, with the running instance's own profile list (`status.json`) checked too before its link is published; coordinated signal-strength capture; TDOA from RTL-SDR IQ snippets aligned on an amateur reference transmitter with drift removal, GCC-PHAT and quality gating, solved at 3+ sites (clocks on NTP only start the recordings together and bound the search; the timing comes from the reference, never from a clock); KrakenSDR bearings from the "Kraken App" output; one fix from all three with a 95% error ellipse, ring-of-receivers and ambiguity warnings; the weekly beacon test publishing miss distance and its time differences, with an accuracy page and a timing page plotting each correlation peak against the known delay; success measures shown in the app (sites listening, neighborhood-sized fixes, miss-distance trend).
 
-Not done: NOAA Weather Radio and ATSC references (their IQ can't cross amateur RF); 10 MHz/PPS receivers for the 500 m stretch target (hardware); the live fox-hunt demo, the university write-up and partnership, and asking the club and AREDN forum about non-amateur waterfalls (not software); no capture yet on real dongles or a real KrakenSDR.
+Not done: NOAA Weather Radio and ATSC references, by decision (their recordings can't cross amateur RF, and NOAA is 14 MHz from the nearest amateur band, too far to share a 2 MHz recording with the target); 10 MHz/PPS receivers for the 500 m stretch target (hardware); the live fox-hunt demo, the university write-up and partnership, and asking the people running the mesh and the AREDN forum about non-amateur waterfalls (not software); no capture yet on real dongles, a real KrakenSDR or a real OpenWebRX+ instance, so the 0.5 to 2 km target is still unmeasured.
 
 ## What it is
 
@@ -31,11 +31,11 @@ No mesh-local SDR directory and no amateur VHF/UHF TDOA network were found anywh
 - **A directory that works with the internet down.** Every site's receiver registers as a signed event: location, bands, antenna, live status. One map shows every SDR on the mesh, and it is the only directory of its kind.
 - **Part 97 handled for the operator.** Only amateur-band profiles are offered over RF links (97.113(c)); other bands stay on the site LAN or the internet.
 - **Interference hunting that degrades gracefully.** Signal-strength comparison across sites works from day one with any SDR. Bearings from a KrakenSDR add to it. TDOA adds precision where the hardware allows.
-- **Honest accuracy.** Each fix shows an error ellipse, and a weekly test against the club's own beacon at a surveyed spot publishes the actual miss distance.
+- **Honest accuracy.** Each fix shows an error ellipse, and a weekly test against a beacon at a surveyed spot publishes the actual miss distance.
 
 ## Changes from the v0.1 spec
 
-1. **Timing method.** Reading the RTL-SDR's clock from USB is useless, and feeding GPS pulses into it still leaves about 2 microseconds of error (600 m). The design switches to Panoradio's method: every site captures one shared reference transmitter inside the same snippet (a club beacon, NOAA Weather Radio or an ATSC TV station), and per-snippet drift is estimated and removed.
+1. **Timing method.** Reading the RTL-SDR's clock from USB is useless, and feeding GPS pulses into it still leaves about 2 microseconds of error (600 m). The design switches to Panoradio's method: every site captures one shared reference transmitter inside the same snippet (a beacon, NOAA Weather Radio or an ATSC TV station), and per-snippet drift is estimated and removed.
 2. **Realistic target.** 0.5 to 2 km inside the ring of receivers with RTL-SDRs. The 500 m goal needs a calibration beacon or SDRs with real 10 MHz and PPS inputs; it is a stretch target, not v1.
 3. **Signal choice.** Best targets are digital bursts (DMR, P25, data) and key-up transients. A carrier with only a CTCSS tone has almost nothing to correlate, so the app says so instead of returning a bad fix. Correlation uses GCC-PHAT with quality gating.
 4. **Order of work.** Directory and signal-strength hunting first; TDOA second.
@@ -56,7 +56,7 @@ No mesh-local SDR directory and no amateur VHF/UHF TDOA network were found anywh
 
 - Receive-only stations need no license.
 - 97.113(c): no retransmitting non-amateur signals over RF; band filtering is built in.
-- Waterfalls of non-amateur bands over the mesh: likely low risk as measurement data, but ask the club and the AREDN forum first.
+- Waterfalls of non-amateur bands over the mesh: likely low risk as measurement data, but ask the people running the mesh and the AREDN forum first.
 
 ## Risks
 
@@ -66,9 +66,9 @@ No mesh-local SDR directory and no amateur VHF/UHF TDOA network were found anywh
 
 ## Success measures
 
-- Directory used by the club; at least two sites listening.
+- Directory used by the mesh group; at least two sites listening.
 - One real interference case narrowed to a neighborhood.
-- Published miss distance against the club beacon, improving over time.
+- Published miss distance against the beacon, improving over time.
 
 ## Open questions
 

@@ -8,7 +8,7 @@ Radios at mesh sites detect aircraft by listening for FM broadcast signals bounc
 
 ## Who it's for
 
-University EE and DSP students and faculty, aviation enthusiasts, and the club as a demonstration. Research and education, not operations.
+University EE and DSP students and faculty, aviation enthusiasts, and the mesh group as a demonstration. Research and education, not operations.
 
 ## What exists today
 
@@ -33,15 +33,15 @@ The hobby multi-site stack already exists. What's missing is a tracker that work
 1. Built on blah2, adsb2dd and 3lips.
 2. Realistic expectations: hobby hardware sees aircraft over tens of kilometres at best; FM gives about 1.5 to 3 km range resolution. ATSC TV signals give better resolution and are worth adding.
 3. Compute: a mini PC rather than a Pi 5 until someone shows a Pi 5 keeping up.
-4. Priority dropped to last: high cost per site, siting is hard (a site that sees the FM tower well for the reference channel is often bad for the surveillance channel), and little practical value for a club.
+4. Priority dropped to last: high cost per site, siting is hard (a site that sees the FM tower well for the reference channel is often bad for the surveillance channel), and little practical value for a mesh group.
 
 ## Version 1 scope
 
-Single site at the shack or a home station: RSPduo or KrakenSDR, blah2, ADS-B truth overlay from a club PiAware feed, detection statistics.
+Single site at the shack or a home station: RSPduo or KrakenSDR, blah2, ADS-B truth overlay from a local PiAware feed, detection statistics.
 
-Built (labelled experimental): reads blah2's detection, config and timing API; ADS-B truth from dump1090-fa / readsb / tar1090 `aircraft.json` with expected bistatic range and Doppler for blah2's geometry; gated matching per CPI; performance page with Pd by range bin, by aircraft and by hour of day, aircraft seen against the 80% goal, unmatched-detection rate with the Pd chance alone would give, and reliable range over a chosen window; range-Doppler plot of detections against ADS-B tracks; setup page with whether blah2 keeps up with its CPI; detection reports over the mesh as `radar.detections` telemetry and site geometry as `radar.site`; a per-site tracker (Kalman filter in bistatic range and range rate, M-of-N confirmation); multi-site location without ADS-B (least-squares position, velocity and height with error ellipses, association across sites, fused tracks); multi-site accuracy against ADS-B and a count of fused tracks with no ADS-B (the second success measure); a live map with track ellipses, fixes and ADS-B; options to hide aircraft ids and fixes no ADS-B aircraft explains; a `simulate` command serving blah2's API and `aircraft.json` for one or more sites seeing the same synthetic aircraft.
+Built (labelled experimental): the cross-ambiguity function, clutter removal and CFAR detection are done by blah2 itself, and the app reads its detection, config and timing API (formats checked against blah2's source); ADS-B truth from dump1090-fa / readsb / tar1090 `aircraft.json` (checked against dump1090-fa's and readsb's source) with expected bistatic range and Doppler for blah2's geometry; gated matching per CPI; performance page with Pd by range bin, by aircraft and by hour of day, aircraft seen against the 80% goal, unmatched-detection rate with the Pd chance alone would give, and reliable range over a chosen window; range-Doppler plot of detections against ADS-B tracks; setup page with whether blah2 keeps up with its CPI; detection reports over the mesh as `radar.detections` telemetry, held to `mesh.max_kbps` (1 kbit/s by default, signed events included, weakest detections left out past it, with a test of the limit), and site geometry as `radar.site`; a per-site tracker (Kalman filter in bistatic range and range rate, M-of-N confirmation); multi-site location without ADS-B (least-squares position, velocity and height with error ellipses, association across sites, fused tracks); multi-site accuracy against ADS-B and a count of fused tracks with no ADS-B (the second success measure); a live map with track ellipses, fixes and ADS-B, leaving out track ellipses and fixes no ADS-B aircraft explains unless `show_unmatched` is set; an option to hide aircraft ids; a `simulate` command serving blah2's API and `aircraft.json` for one or more sites seeing the same synthetic aircraft.
 
-Not done: running against real hardware (an RSPduo or KrakenSDR with blah2 and a PiAware feed at two or more sites), since none is available here; the write-up or paper with a faculty partner (not software); contributing the tracker upstream to blah2 (the owner's call); anything ATSC-specific beyond what blah2 itself supports.
+Not done: running against real hardware (an RSPduo or KrakenSDR with blah2 and a PiAware feed at two or more sites), since none is available here; the write-up or paper with a faculty partner (not software); contributing the tracker upstream to blah2 (the owner's call); anything ATSC-specific beyond what blah2 itself supports; an illuminator database or transmitter picker (the app uses the transmitter blah2 is set to; which FM or ATSC transmitter gives the best geometry is the open question below, a siting job).
 
 ## Later
 

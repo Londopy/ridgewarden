@@ -8,13 +8,13 @@ Repo: `ridgewarden-status` | Reviewed 2026-11-19 | Status: version 1 built, not 
 
 ## Who it's for
 
-Emergency operations centre staff, ARES and RACES leadership, county emergency managers and club leadership. People who have never heard of Babel.
+Emergency operations centre staff, ARES and RACES leadership, county emergency managers and the people running the mesh. People who have never heard of Babel.
 
 ## What exists today
 
 | Tool | What it does well | Gap |
 |---|---|---|
-| aredn-distributed-monitor | Agency tiles with plain-language problems; wall display; static HTML export; printable club report; badges; incidents with open, monitoring and resolved states; pinned notes; maintenance windows; offline field mode | Written mostly for hams; one collector, so it goes stale if that box is cut off; no signed notices; no subscriptions for agencies; no public incident history |
+| aredn-distributed-monitor | Agency tiles with plain-language problems; wall display; static HTML export; printable report; badges; incidents with open, monitoring and resolved states; pinned notes; maintenance windows; offline field mode | Written mostly for hams; one collector, so it goes stale if that box is cut off; no signed notices; no subscriptions for agencies; no public incident history |
 | Atlassian Statuspage, Instatus | The standard for status pages: incident stages (investigating, identified, monitoring, resolved), subscriptions, maintenance notices | Internet services, not a radio network |
 | AREDN's alert banner | A yellow notice on every node page, with optional local repositories for meshes without internet | One message for the whole mesh, not a status page |
 
@@ -30,7 +30,7 @@ Emergency operations centre staff, ARES and RACES leadership, county emergency m
 - incidents with stages and a timeline, one notification per incident
 - maintenance notices
 - wall display mode
-- embeds and badges; a static HTML fragment for club websites
+- embeds and badges; a static HTML fragment for the mesh group's website
 - offline caching for phones in the field
 
 ## Changes from the v0.1 spec
@@ -42,9 +42,9 @@ Emergency operations centre staff, ARES and RACES leadership, county emergency m
 
 ## Version 1 scope
 
-Built: site and service tiles, headline from the mesh's own reachability list, signed notice, print layout, JSON, incidents with stages and a 90-day history (one alert per incident), maintenance notices, a wall display, a badge and an embeddable fragment, the AREDN banner feed (`<node>.txt`, group files and `all.txt` for `aredn.@alerts[0].localpath`), offline use (a saved one-file copy everywhere, and a service worker on https), and the Later items: subscriptions for agency contacts (email, email-to-SMS gateways, webhooks), a map view, and the internet mirror (static files pushed off the mesh, with an Anubis example). An about page counts views as the nearest measurable sign of use.
+Built: site and service tiles (each site with when it was last heard, and its power from a sitemon hub where the sites run sitemon), headline from the mesh's own reachability list, signed notice (shown only from the stations listed in `banner_authors`), print layout (one sheet of Letter or A4 with 20 sites, a few notices and up to about 28 services), JSON, incidents with stages and a 90-day history (one alert per incident), maintenance notices, a wall display, a badge and an embeddable fragment, the AREDN banner feed (`<node>.txt`, group files and `all.txt` for `aredn.@alerts[0].localpath`), offline use (a saved one-file copy everywhere, and a service worker on https), and the Later items: subscriptions for agency contacts (email, email-to-SMS gateways, webhooks), a map view, and the internet mirror (static files pushed off the mesh, with an Anubis example, leaving power readings out unless asked). An about page counts views as the nearest measurable sign of use.
 
-Not done: agency feedback, which is people asking agencies, not software; and the success measure itself, which no app can observe (the view counts stand in for it). Service workers need https, so on the mesh's plain-http pages offline use is the saved copy only.
+Not done: agency feedback, which is people asking agencies, not software; the success measure itself, which no app can observe (the view counts stand in for it); and a run on a real mesh (tested against the simulator only, and power against sitemon's simulated demo sites). Service workers need https, so on the mesh's plain-http pages offline use is the saved copy only.
 
 ## Later
 

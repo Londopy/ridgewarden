@@ -17,6 +17,7 @@ Design review of the 2026-11-17 spec sheets, done 2026-11-19. Each sheet was che
 | 10 | [Passive radar](10-passive-radar.md) | `ridgewarden-radar` | Integration of existing open tools; parked unless a faculty partner wants it | version 1, experimental |
 | 11 | [Lightning](11-lightning.md) | `ridgewarden-lightning` | Fills a real gap: offline, local, with fire alerts; builds on vlfrx-tools | version 1 |
 | 12 | [Data mules](12-data-mules.md) | `ridgewarden-mule` | New for AREDN; scheduled couriers like DakNet | version 1 |
+| 13 | [Always-on game](13-always-on-game.md) | `ridgewarden-lamplighters` | New: a persistent world whose roads are a real mesh's live links | version 1 |
 
 ## Tiers
 
