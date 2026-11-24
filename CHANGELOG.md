@@ -37,6 +37,8 @@ All notable changes to ridgewarden are listed here. The format follows [Keep a C
 - `ridgewarden update` unpacks without the archive's owners and modes, installs only a plain file (never through a link), and stages the new binary as a new file, never writing through whatever was at that name; it syncs the binary to disk before the rename and the folder after it, and a failed folder sync after a good rename is a warning, not a failure. Anything left from a failed install is removed. GitHub's answer, the checksum list, the signature and the archive are refused past the size a real release has, whether curl fetches them or the mesh has them, and a release's tag must be a plain version.
 - `ridgewarden update` tries releases from the mesh and GitHub together, newest first by a proper version order, and takes the first that checks out; two names for one version, such as `1.2.3` and `1.2.03`, used to break the sort. Ctrl-C at its prompt removes its work folder.
 - `ridgewarden update` reads the archive's checksum from `sha256sum` on stdin, so a path with a backslash in it can't garble it.
+- The dashboard's "stations writing" counts stations; it counted each station's telemetry log as another one.
+- The README runs the commands that open the agent's data as its user (`sudo -u ridgewarden`) and `update` with `sudo`, and says that the `.deb`'s own scripts don't check the release signature.
 
 ## [0.1.0] - 2026-11-20
 
