@@ -221,11 +221,13 @@ impl Pill {
 
 /// A pill as text: its word with a space either side, in its color.
 pub fn pill(theme: &Theme, p: Pill) -> Span<'static> {
-    Span::styled(format!(" {} ", p.word()), theme.pill(p.color()))
+    word_pill(theme, p.word(), p.color())
 }
 
-/// Columns the pill column takes: " PARTIAL ".
-const PILL_WIDTH: u16 = 9;
+/// A pill with an app's own word, for states the four shared ones can't name.
+pub fn word_pill(theme: &Theme, word: &str, color: Color) -> Span<'static> {
+    Span::styled(format!(" {word} "), theme.pill(color))
+}
 
 /// A table whose first column holds each row's pill (blank for a row with no state), the
 /// selected row in reverse video. `header` and `widths` are for the columns after the pill;
@@ -237,12 +239,54 @@ pub fn pill_table<'a>(
     widths: &[Constraint],
     rows: impl IntoIterator<Item = (Option<Pill>, Vec<Cell<'a>>)>,
 ) -> Table<'a> {
+    let rows = rows
+        .into_iter()
+        .map(|(p, cells)| (p.map(|p| (p.word(), p.color())), cells));
+    // fixed at " PARTIAL " so the columns don't move as states change
+    table_of(theme, header, widths, rows.collect(), 9)
+}
+
+/// `pill_table` for an app's own words; the pill column is as wide as the widest word.
+pub fn word_table<'a>(
+    theme: &Theme,
+    header: &[&'a str],
+    widths: &[Constraint],
+    rows: impl IntoIterator<Item = (Option<(&'a str, Color)>, Vec<Cell<'a>>)>,
+) -> Table<'a> {
+    let rows: Vec<_> = rows.into_iter().collect();
+    let widest = rows
+        .iter()
+        .filter_map(|(p, _)| p.map(|(w, _)| w.chars().count()))
+        .max()
+        .unwrap_or(0)
+        .max("State".len());
+    table_of(
+        theme,
+        header,
+        widths,
+        rows,
+        u16::try_from(widest + 2).unwrap_or(u16::MAX),
+    )
+}
+
+type WordRow<'a> = (Option<(&'a str, Color)>, Vec<Cell<'a>>);
+
+fn table_of<'a>(
+    theme: &Theme,
+    header: &[&'a str],
+    widths: &[Constraint],
+    rows: Vec<WordRow<'a>>,
+    pill_width: u16,
+) -> Table<'a> {
     let rows = rows.into_iter().map(|(p, cells)| {
         // not Cell::default(): it spans no columns, so the row's other cells would shift left
-        let first = p.map_or_else(|| Cell::from(""), |p| Cell::from(pill(theme, p)));
+        let first = p.map_or_else(
+            || Cell::from(""),
+            |(w, c)| Cell::from(word_pill(theme, w, c)),
+        );
         Row::new(std::iter::once(first).chain(cells))
     });
-    let widths = std::iter::once(Constraint::Length(PILL_WIDTH)).chain(widths.iter().copied());
+    let widths = std::iter::once(Constraint::Length(pill_width)).chain(widths.iter().copied());
     let table = Table::new(rows, widths).row_highlight_style(theme.selected());
     if header.is_empty() {
         return table;
@@ -389,7 +433,8 @@ impl<'a> Notice<'a> {
                 Span::raw(what),
             ]),
         };
-        Paragraph::new(line).wrap(Wrap { trim: true })
+        // trimming would eat the pill's leading space
+        Paragraph::new(line).wrap(Wrap { trim: false })
     }
 }
 
@@ -584,6 +629,43 @@ mod tests {
         assert_eq!(line(0), "State     Name   What");
         assert_eq!(line(1), " OK       Agent  running");
         assert_eq!(line(2), "          Peers  none yet");
+    }
+
+    #[test]
+    fn an_apps_own_words_get_a_column_as_wide_as_the_widest() {
+        use ratatui::buffer::Buffer;
+        use ratatui::widgets::Widget;
+        let rows = [
+            (
+                Some(("UNPUBLISHED", Color::Yellow)),
+                vec![Cell::from("Chat")],
+            ),
+            (Some(("UP", Color::Green)), vec![Cell::from("Map")]),
+        ];
+        let area = Rect::new(0, 0, 30, 3);
+        let mut buf = Buffer::empty(area);
+        word_table(&Theme::new(None), &["Name"], &[Constraint::Fill(1)], rows)
+            .render(area, &mut buf);
+        let line = |y| {
+            let s: String = (0..30).map(|x| buf[(x, y)].symbol()).collect();
+            s.trim_end().to_string()
+        };
+        assert_eq!(line(0), "State         Name");
+        assert_eq!(line(1), " UNPUBLISHED  Chat");
+        assert_eq!(line(2), " UP           Map");
+    }
+
+    #[test]
+    fn an_error_keeps_the_space_before_its_pill() {
+        use ratatui::buffer::Buffer;
+        use ratatui::widgets::Widget;
+        let area = Rect::new(0, 0, 30, 1);
+        let mut buf = Buffer::empty(area);
+        Notice::Error("no answer")
+            .paragraph(&Theme::new(None))
+            .render(area, &mut buf);
+        let s: String = (0..30).map(|x| buf[(x, 0)].symbol()).collect();
+        assert_eq!(s.trim_end(), " ERROR  no answer");
     }
 
     #[test]
