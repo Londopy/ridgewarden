@@ -18,7 +18,7 @@
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/dashboard-dark.png">
-  <img src="docs/images/dashboard-light.png" alt="The ridgewarden dashboard at site tst-shack, station N0CALL-1. A green headline says it polled its node 17 seconds ago. Cards show 16 events in the log, 3 stations writing and 0 forks seen. What changed in the last 24 hours: no changes. Both peers synced 1 second ago. A disk use table totals 1.8 MB, and the stations table lists N0CALL-1, N0CALL-2 and N0CALL-3, all trusted.">
+  <img src="docs/images/dashboard-light.png" alt="The ridgewarden dashboard at site tst-shack, station N0CALL-1. A green headline says it polled its node 4 seconds ago. Cards show 16 events in the log, 3 stations writing and 0 forks seen. What changed in the last 24 hours: no changes. Its two peers, N0CALL-2 and N0CALL-3, synced 7 seconds ago. A disk use table totals 1.8 MB, and the stations table lists N0CALL-1, N0CALL-2 and N0CALL-3, all trusted.">
 </picture>
 
 <sub>The dashboard at one of three sites on a simulated mesh (ridgewarden-sim), with all three in sync. The station names are made up.</sub>
@@ -70,11 +70,11 @@ The headline says how polling the node is going:
 | 🔴 | Node *node* last answered at *time*. | Its last answer is more than three poll intervals old. |
 | ⚪ | No poll yet. | The agent hasn't polled its node yet. |
 
-<img src="docs/images/partition.gif" alt="The tst-shack dashboard reloading through a partition drill. Site 2 is cut off: What changed lists tst-north and tst-paso as gone nodes and Paso Camera as a gone service, the peer row for site 2 turns red with failing, could not connect, and site 2's event counts stop while this site's keep growing. Then the link comes back: the peer syncs again, site 2's counts jump as the events it wrote during the split arrive, and What changed goes back to No changes.">
+<img src="docs/images/partition.gif" alt="The tst-shack dashboard reloading through a partition drill. Site 2 is cut off: its row in the peers table, N0CALL-2, turns red with failing, could not connect, What changed lists tst-north and tst-paso as gone nodes and Paso Camera as a gone service, and N0CALL-2's event counts stop while this site's keep growing. Then the link comes back: N0CALL-2 syncs again, its counts jump as the events it wrote during the split arrive, and What changed goes back to No changes.">
 
-<sub>A partition drill on the simulator: site 2 (tst-paso) cut off for 30 seconds and healed, about two minutes sped up to 12 seconds. The station names are made up.</sub>
+<sub>A partition drill on the simulator: site 2 (tst-paso) cut off for 40 seconds and healed, about two minutes sped up to under 12 seconds. The station names are made up.</sub>
 
-Under the headline: how many events the log holds, how many stations write to it and how many forks it has seen; links to the apps in the config; what changed on the mesh in the last 24 hours, as seen from this node; each peer and how its last sync went; disk use per class; and each station in the log, with its key, whether this site trusts it, its events (and how many are still missing) and the telemetry kept. A peer from the config or an invite shows `?` for its callsign, since only a peer found from its advert has its signed identity checked.
+Under the headline: how many events the log holds, how many stations write to it and how many forks it has seen; links to the apps in the config; what changed on the mesh in the last 24 hours, as seen from this node; each peer and how its last sync went; disk use per class; and each station in the log, with its key, whether this site trusts it, its events (and how many are still missing) and the telemetry kept. A peer shows the callsign from its signed identity, which the core checks when it finds the peer's advert or first pulls from it; until then it shows `?`.
 
 The Changes page makes the same comparison over 1 hour, 24 hours or 7 days, and the invite page is under [joining other sites](#joining-other-sites). A site that trusts only itself gets a note on how to join the others. The overview and the Changes page reload every minute.
 

@@ -38,6 +38,7 @@ All notable changes to ridgewarden are listed here. The format follows [Keep a C
 - `ridgewarden update` tries releases from the mesh and GitHub together, newest first by a proper version order, and takes the first that checks out; two names for one version, such as `1.2.3` and `1.2.03`, used to break the sort. Ctrl-C at its prompt removes its work folder.
 - `ridgewarden update` reads the archive's checksum from `sha256sum` on stdin, so a path with a backslash in it can't garble it.
 - The dashboard's "stations writing" counts stations; it counted each station's telemetry log as another one.
+- Peers from the config or an invite are named by their callsign on the dashboard, in `status`, in `top` and in the metrics, from their signed identity, which the core checks after its first good pull from each. They showed `?` before.
 - The README runs the commands that open the agent's data as its user (`sudo -u ridgewarden`) and `update` with `sudo`, and says that the `.deb`'s own scripts don't check the release signature.
 
 ## [0.1.0] - 2026-11-20
