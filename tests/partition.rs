@@ -267,6 +267,24 @@ async fn every_page_and_api_answers() {
 }
 
 #[tokio::test]
+async fn the_dashboard_counts_stations_not_their_chains() {
+    let a = agent("N0AAA", 1).await;
+    let b = agent("N0BBB", 2).await;
+    for x in [&a, &b] {
+        x.app
+            .log
+            .append_telemetry("svc.probe", json!({"results": []}))
+            .unwrap();
+    }
+    a.pull(&b).await.unwrap();
+    let page = reqwest::get(&a.url).await.unwrap().text().await.unwrap();
+    assert!(
+        page.contains("<div class=n>2</div>stations writing"),
+        "two stations, each with a main and a telemetry chain: {page}"
+    );
+}
+
+#[tokio::test]
 async fn apps_can_append_through_the_local_api_with_the_token() {
     let a = agent("N0AAA", 1).await;
     let core = |tok: Option<&str>| {

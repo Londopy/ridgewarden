@@ -576,7 +576,7 @@ async fn overview(State(c): S) -> R<Html<String>> {
         "<div class=cards><div class=card><div class=n>{events}</div>events in the log</div>\
          <div class=card><div class=n>{}</div>stations writing</div>\
          <div class=card><div class=n>{forks}</div>forks seen</div></div>",
-        heads.len()
+        heads.iter().filter(|h| !h.key.contains(':')).count()
     );
 
     b.push_str("<h2>Apps</h2>");
