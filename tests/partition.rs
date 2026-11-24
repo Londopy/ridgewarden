@@ -9,7 +9,9 @@ use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use serde_json::json;
+use axum::routing::get;
+use axum::{Json, Router};
+use serde_json::{Value, json};
 
 use ridgewarden::app::App;
 use ridgewarden::config::Config;
@@ -281,6 +283,64 @@ async fn the_dashboard_counts_stations_not_their_chains() {
     assert!(
         page.contains("<div class=n>2</div>stations writing"),
         "two stations, each with a main and a telemetry chain: {page}"
+    );
+}
+
+/// What `a` says about its first peer in `/v1/peers`, which `status` and `top` read.
+async fn first_peer(a: &Agent) -> Value {
+    let v: Value = reqwest::get(format!("{}/v1/peers", a.url))
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    v["peers"][0].clone()
+}
+
+#[tokio::test]
+async fn the_first_good_pull_names_a_peer_from_its_signed_identity() {
+    let b = agent("N0BBB", 2).await;
+    let a = agent_with("N0AAA", 1, |c| c.sync.peers = vec![b.url.clone()]).await;
+    b.cut.store(true, Ordering::SeqCst);
+    sync::round(&a.app).await;
+    assert_eq!(
+        first_peer(&a).await["call"],
+        Value::Null,
+        "not before a pull works"
+    );
+    b.cut.store(false, Ordering::SeqCst);
+    sync::round(&a.app).await;
+    assert_eq!(first_peer(&a).await["call"], "N0BBB");
+    let page = reqwest::get(&a.url).await.unwrap().text().await.unwrap();
+    assert!(
+        page.contains(&format!("<td>N0BBB</td><td>{}</td>", b.url)),
+        "the dashboard's peers table names it: {page}"
+    );
+}
+
+#[tokio::test]
+async fn a_peer_whose_identity_does_not_check_out_stays_unnamed() {
+    let b = Log::new(
+        Store::open_in_memory().unwrap(),
+        Identity::from_seed("N0BBB", [2; 32]),
+    )
+    .unwrap();
+    let mut forged = b.bind_event().unwrap();
+    forged.author.call = "N0EVIL".into();
+    let router = Router::new()
+        .route("/v1/heads", get(|| async { Json(json!({"heads": []})) }))
+        .route("/v1/identity", get(move || async move { Json(forged) }));
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, router).await.unwrap() });
+    let a = agent_with("N0AAA", 1, |c| c.sync.peers = vec![url]).await;
+    sync::round(&a.app).await;
+    let p = first_peer(&a).await;
+    assert!(p["last_ok"].is_i64(), "the pull itself went fine: {p}");
+    assert_eq!(
+        p["call"],
+        Value::Null,
+        "a callsign it can't prove names no one"
     );
 }
 
@@ -683,7 +743,7 @@ async fn metrics_are_off_unless_enabled_and_need_the_token() {
     for want in [
         "ridgewarden_events{log=\"main\"} 5".to_string(),
         "ridgewarden_trusted_stations 1".into(),
-        format!("ridgewarden_peer_up{{peer=\"{}\",call=\"\"}} 1", a.url),
+        format!("ridgewarden_peer_up{{peer=\"{}\",call=\"N0AAA\"}} 1", a.url),
         format!("ridgewarden_peer_up{{peer=\"{}\",call=\"\"}} 0", gone.url),
         "ridgewarden_blobs{state=\"complete\"} 0".into(),
     ] {

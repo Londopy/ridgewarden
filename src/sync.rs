@@ -257,10 +257,29 @@ pub async fn round(app: &App) {
                 PULL_TIME.as_secs()
             )),
         };
+        let named = app
+            .peers
+            .lock()
+            .unwrap()
+            .get(url)
+            .is_some_and(|p| p.key.is_some());
+        // the first good pull also learns who the peer is, from the signed identity.bind
+        // that starts its own chain
+        let who = match &res {
+            Ok(_) if !named => crate::app::verify_peer(&app.http, url)
+                .await
+                .inspect_err(|e| tracing::debug!("{url} did not say who it is: {e:#}"))
+                .ok(),
+            _ => None,
+        };
         let mut peers = app.peers.lock().unwrap();
         let Some(p) = peers.get_mut(url) else {
             continue;
         };
+        if let Some(bind) = who {
+            p.call = Some(bind.author.call);
+            p.key = Some(bind.author.key);
+        }
         match res {
             Ok(rep) => {
                 p.last_ok = Some(now_ms());
