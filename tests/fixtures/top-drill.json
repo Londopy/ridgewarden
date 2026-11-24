@@ -1,0 +1,660 @@
+{
+  "at": 1795477425985,
+  "sysinfo": {
+    "api_version": "2.0",
+    "hosts": [
+      {
+        "ip": "10.1.0.1",
+        "name": "tst-cuesta"
+      },
+      {
+        "ip": "10.1.0.2",
+        "name": "tst-madonna"
+      },
+      {
+        "ip": "10.1.0.3",
+        "name": "tst-blackmtn"
+      },
+      {
+        "ip": "10.1.0.6",
+        "name": "tst-lopez"
+      },
+      {
+        "ip": "10.1.0.7",
+        "name": "tst-shack"
+      }
+    ],
+    "interfaces": [
+      {
+        "ip": "10.1.0.7",
+        "name": "br-lan"
+      }
+    ],
+    "ip": "10.1.0.7",
+    "lat": 35.3,
+    "link_info": {
+      "10.1.0.2": {
+        "hostname": "TST-MADONNA",
+        "interface": "wlan0",
+        "linkType": "DTD"
+      }
+    },
+    "lon": -120.66,
+    "lqm": {
+      "config": {
+        "user_blocks": ""
+      },
+      "enabled": true,
+      "info": {
+        "hidden_nodes": [],
+        "now": 1800000563.0,
+        "trackers": {
+          "02:00:00:00:00:00": {
+            "avg_lq": 100.0,
+            "canonical_ip": "10.1.0.2",
+            "device": "wlan0",
+            "hostname": "TST-MADONNA",
+            "ip": "10.1.0.2",
+            "lastseen": 1800000563.0,
+            "lq": 100.0,
+            "mac": "02:00:00:00:00:00",
+            "metric": 256,
+            "ping_quality": 100,
+            "quality": 100.0,
+            "rev_quality": 100.0,
+            "routable": true,
+            "route_count": 3,
+            "rtt": 5.0,
+            "rx_bitrate": 117.0,
+            "tx_bitrate": 130.0,
+            "tx_fail": 0,
+            "tx_packets": 100000,
+            "tx_quality": 100.0,
+            "tx_retries": 500,
+            "type": "DTD"
+          }
+        }
+      }
+    },
+    "meshrf": {
+      "chanbw": "10",
+      "channel": 140,
+      "freq": "5.700",
+      "mode": "adhoc",
+      "status": "on"
+    },
+    "node": "TST-SHACK",
+    "node_details": {
+      "firmware_mfg": "AREDN",
+      "firmware_version": "4.26.7.0",
+      "mesh_gateway": false,
+      "mesh_supernode": false,
+      "model": "Ubiquiti Rocket 5AC Lite"
+    },
+    "services": [
+      {
+        "ip": "TST-CUESTA",
+        "link": "tcp://127.0.0.1:9201",
+        "name": "Winlink Gateway",
+        "protocol": "tcp"
+      },
+      {
+        "ip": "TST-SHACK",
+        "link": "http://127.0.0.1:9201/svc/TST-SHACK/Mesh_Chat",
+        "name": "Mesh Chat",
+        "protocol": "tcp"
+      },
+      {
+        "ip": "TST-SHACK",
+        "link": "http://127.0.0.1:9201/svc/TST-SHACK/Offline_Map",
+        "name": "Offline Map",
+        "protocol": "tcp"
+      }
+    ],
+    "services_local": [
+      {
+        "link": "http://127.0.0.1:9201/svc/TST-SHACK/Mesh_Chat",
+        "name": "Mesh Chat",
+        "protocol": "tcp"
+      },
+      {
+        "link": "http://127.0.0.1:9201/svc/TST-SHACK/Offline_Map",
+        "name": "Offline Map",
+        "protocol": "tcp"
+      }
+    ],
+    "sysinfo": {
+      "freememory": "40000",
+      "loads": [
+        0.1,
+        0.05,
+        0.01
+      ],
+      "uptime": "3 days, 4:05"
+    }
+  },
+  "peers": {
+    "peers": [
+      {
+        "call": null,
+        "last_err": "could not connect",
+        "last_ok": 1795477392782,
+        "url": "http://127.0.0.1:9202"
+      },
+      {
+        "call": null,
+        "last_err": null,
+        "last_ok": 1795477425428,
+        "url": "http://127.0.0.1:9203"
+      }
+    ]
+  },
+  "blobs": {
+    "blobs": [
+      {
+        "complete": false,
+        "name": "tst-county-map.pmtiles",
+        "root": "44546e5609cceab72a689541ff5afb330671f04947d51b4e4a79d0c210610976",
+        "size": 6471456,
+        "wanted": true
+      }
+    ]
+  },
+  "feed": [
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-3",
+          "key": "611d0631007ae817a3fbc407da5f09560ff9485a49e9badcc32e93ccfa8941db"
+        },
+        "id": "eca84f4fe1ec2ac7e46de402e8634bde6baffc6a57f8e9eeecd31db096fa3244",
+        "kind": "node.poll",
+        "lamport": 4,
+        "log": "telemetry",
+        "mono_time": 10,
+        "payload": {
+          "ads_hash": "9fbbc0055654bc53c7de64701de6d679",
+          "api_version": "1.14",
+          "firmware": "3.25.8.0",
+          "hosts_hash": "cb679c69ac94198133d584e883a2a458",
+          "lat": 35.18,
+          "links": [
+            {
+              "ip": "10.1.0.1",
+              "neighbor": "tst-cuesta",
+              "noise": -95.0,
+              "nquality": 100.0,
+              "quality": 100.0,
+              "rx_rate": 19.5,
+              "signal": -76.0,
+              "snr": 19.0,
+              "tx_fail": 0.0,
+              "tx_rate": 26.0,
+              "type": "RF"
+            }
+          ],
+          "local_services": [],
+          "lon": -120.55,
+          "model": "Ubiquiti Rocket M5",
+          "node": "tst-lopez",
+          "ok": true,
+          "stale_skipped": 0,
+          "trackers": true,
+          "via": "lan"
+        },
+        "prev": null,
+        "seq": 0,
+        "sig": "59e4ef935ade6be90cc1461e062a24f58435f904b537c77118574ef98fc93ac3503cead6bc4e39fb4b58cf1d22a671653e3534acc4e105ec5c9e1c3b7e30170d",
+        "wall_time": "2026-11-23T23:41:18.871Z"
+      },
+      "seen_ms": 1795477288639,
+      "seq": 5,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-3",
+          "key": "611d0631007ae817a3fbc407da5f09560ff9485a49e9badcc32e93ccfa8941db"
+        },
+        "id": "1217ffc66115d8bc83126d98522dfff131618ea76f45ad42c1b75517aece8ca5",
+        "kind": "identity.bind",
+        "lamport": 1,
+        "mono_time": 1,
+        "payload": {
+          "callsign": "N0CALL-3",
+          "key": "611d0631007ae817a3fbc407da5f09560ff9485a49e9badcc32e93ccfa8941db"
+        },
+        "prev": null,
+        "seq": 0,
+        "sig": "d82e48c21e9e2d56472d0c8d2ac3597d9bb4aac3671ca2d97fa57cbfb67496746b39bdb3939978246508554358330255d6f7762eaddd8995ef7306f96b6d8a09",
+        "wall_time": "2026-11-23T23:41:18.861Z"
+      },
+      "seen_ms": 1795477288647,
+      "seq": 6,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-3",
+          "key": "611d0631007ae817a3fbc407da5f09560ff9485a49e9badcc32e93ccfa8941db"
+        },
+        "id": "b20f76bfbfba0367867cc5b389d6e5ff781f41146b4f8c6d1b4ee0fe8f61e45a",
+        "kind": "mesh.list",
+        "lamport": 2,
+        "mono_time": 7,
+        "payload": {
+          "hash": "9fbbc0055654bc53c7de64701de6d679",
+          "list": [
+            {
+              "host": "tst-cuesta",
+              "link": "tcp://127.0.0.1:9201",
+              "name": "Winlink Gateway",
+              "protocol": "tcp"
+            },
+            {
+              "host": "tst-paso",
+              "link": "http://127.0.0.1:9201/svc/TST-PASO/Paso_Camera",
+              "name": "Paso Camera",
+              "protocol": "tcp"
+            },
+            {
+              "host": "tst-shack",
+              "link": "http://127.0.0.1:9201/svc/TST-SHACK/Mesh_Chat",
+              "name": "Mesh Chat",
+              "protocol": "tcp"
+            },
+            {
+              "host": "tst-shack",
+              "link": "http://127.0.0.1:9201/svc/TST-SHACK/Offline_Map",
+              "name": "Offline Map",
+              "protocol": "tcp"
+            }
+          ]
+        },
+        "prev": "1217ffc66115d8bc83126d98522dfff131618ea76f45ad42c1b75517aece8ca5",
+        "seq": 1,
+        "sig": "2947269296681fad4378ba338644349a94148408e408f97b0d01060786c7df08d61fae4c576933cad315be29600aa4ead6415f235f5f316bccad5453e82e8a00",
+        "wall_time": "2026-11-23T23:41:18.868Z"
+      },
+      "seen_ms": 1795477288651,
+      "seq": 7,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-3",
+          "key": "611d0631007ae817a3fbc407da5f09560ff9485a49e9badcc32e93ccfa8941db"
+        },
+        "id": "72736fcc462646388a4e96d8e31348295fde7a51255b73202cd9a82d55f927ab",
+        "kind": "mesh.list",
+        "lamport": 3,
+        "mono_time": 8,
+        "payload": {
+          "hash": "cb679c69ac94198133d584e883a2a458",
+          "list": [
+            "tst-blackmtn",
+            "tst-cuesta",
+            "tst-lopez",
+            "tst-madonna",
+            "tst-north",
+            "tst-paso",
+            "tst-shack"
+          ]
+        },
+        "prev": "b20f76bfbfba0367867cc5b389d6e5ff781f41146b4f8c6d1b4ee0fe8f61e45a",
+        "seq": 2,
+        "sig": "2f356160425e9600241389dadbd22957a3f33b79150c8f7a85012d970982b045c8b40b8ab18756805f1a82017ea1133eef73b9cffe9b45d11454c593055f170e",
+        "wall_time": "2026-11-23T23:41:18.869Z"
+      },
+      "seen_ms": 1795477288656,
+      "seq": 8,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-2",
+          "key": "49c45ff19f47b1e05c621cc477ba92fd8a458369de3865268a002b344625fa8a"
+        },
+        "id": "6ddaa0910e8af5873c94141f67a3ef5679edb5a40c25936c96d957cdd574158f",
+        "kind": "node.poll",
+        "lamport": 4,
+        "log": "telemetry",
+        "mono_time": 11,
+        "payload": {
+          "ads_hash": "9fbbc0055654bc53c7de64701de6d679",
+          "api_version": "2.0",
+          "firmware": "4.26.7.0",
+          "hosts_hash": "cb679c69ac94198133d584e883a2a458",
+          "lat": 35.63,
+          "links": [
+            {
+              "ip": "10.1.0.4",
+              "metric": 256.0,
+              "neighbor": "tst-north",
+              "noise": -95.0,
+              "nquality": 100.0,
+              "quality": 100.0,
+              "rtt": 4.0,
+              "rx_rate": 117.0,
+              "signal": -71.0,
+              "snr": 24.0,
+              "tx_fail": 0.0,
+              "tx_rate": 130.0,
+              "type": "RF"
+            }
+          ],
+          "local_services": [
+            "Paso Camera"
+          ],
+          "lon": -120.69,
+          "model": "Ubiquiti Rocket 5AC Lite",
+          "node": "tst-paso",
+          "ok": true,
+          "stale_skipped": 0,
+          "trackers": true,
+          "via": "lan"
+        },
+        "prev": null,
+        "seq": 0,
+        "sig": "ebe03796a89d6e307e409fb8ac3f04ef534a5f968a7cfa0747b7fef1dc84202025adf1e333c8cc80e267e602b09b90941121e6a02e4302de5e3f12a41e474603",
+        "wall_time": "2026-11-23T23:41:18.866Z"
+      },
+      "seen_ms": 1795477288667,
+      "seq": 9,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-2",
+          "key": "49c45ff19f47b1e05c621cc477ba92fd8a458369de3865268a002b344625fa8a"
+        },
+        "id": "bebbcf955e0d676a3c732490c12b22048f7124ea88b20f995d54b32ed059518e",
+        "kind": "identity.bind",
+        "lamport": 1,
+        "mono_time": 1,
+        "payload": {
+          "callsign": "N0CALL-2",
+          "key": "49c45ff19f47b1e05c621cc477ba92fd8a458369de3865268a002b344625fa8a"
+        },
+        "prev": null,
+        "seq": 0,
+        "sig": "27b2b3119e70b6db79c4e5f3a5d269dab05f22da4d0dcc335c26b99aba80ae36ae535d34737e16abc15121e06d315e3f0f143af2e359ee336d08f16c564eac09",
+        "wall_time": "2026-11-23T23:41:18.856Z"
+      },
+      "seen_ms": 1795477288676,
+      "seq": 10,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-2",
+          "key": "49c45ff19f47b1e05c621cc477ba92fd8a458369de3865268a002b344625fa8a"
+        },
+        "id": "431d24529fd1299ded057d7a583e7e4f8090a26720f59802b4f1c68dbb90d0a0",
+        "kind": "mesh.list",
+        "lamport": 2,
+        "mono_time": 7,
+        "payload": {
+          "hash": "9fbbc0055654bc53c7de64701de6d679",
+          "list": [
+            {
+              "host": "tst-cuesta",
+              "link": "tcp://127.0.0.1:9201",
+              "name": "Winlink Gateway",
+              "protocol": "tcp"
+            },
+            {
+              "host": "tst-paso",
+              "link": "http://127.0.0.1:9201/svc/TST-PASO/Paso_Camera",
+              "name": "Paso Camera",
+              "protocol": "tcp"
+            },
+            {
+              "host": "tst-shack",
+              "link": "http://127.0.0.1:9201/svc/TST-SHACK/Mesh_Chat",
+              "name": "Mesh Chat",
+              "protocol": "tcp"
+            },
+            {
+              "host": "tst-shack",
+              "link": "http://127.0.0.1:9201/svc/TST-SHACK/Offline_Map",
+              "name": "Offline Map",
+              "protocol": "tcp"
+            }
+          ]
+        },
+        "prev": "bebbcf955e0d676a3c732490c12b22048f7124ea88b20f995d54b32ed059518e",
+        "seq": 1,
+        "sig": "2a0496b19f76fb0c6551474d600801965a0b2bf986405adee1666bc7ed8477c9d9d6ccf11d0949e916bc99b4052babb84fb6fcdb7b9ead8d745b3f4c68b53707",
+        "wall_time": "2026-11-23T23:41:18.863Z"
+      },
+      "seen_ms": 1795477288681,
+      "seq": 11,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-2",
+          "key": "49c45ff19f47b1e05c621cc477ba92fd8a458369de3865268a002b344625fa8a"
+        },
+        "id": "8a1802d47c592f22bfd8f48c1b408a2eaeb032b9126be8f318746355a3551882",
+        "kind": "mesh.list",
+        "lamport": 3,
+        "mono_time": 9,
+        "payload": {
+          "hash": "cb679c69ac94198133d584e883a2a458",
+          "list": [
+            "tst-blackmtn",
+            "tst-cuesta",
+            "tst-lopez",
+            "tst-madonna",
+            "tst-north",
+            "tst-paso",
+            "tst-shack"
+          ]
+        },
+        "prev": "431d24529fd1299ded057d7a583e7e4f8090a26720f59802b4f1c68dbb90d0a0",
+        "seq": 2,
+        "sig": "dd36a149af8815a7587f722e8c3b11ff93c2f2ae31b6a36d85d99b4a94b4d301341e84600e3f1bd45d0c3c23dea599159c625860f5361ce69137ec5493c80007",
+        "wall_time": "2026-11-23T23:41:18.864Z"
+      },
+      "seen_ms": 1795477288687,
+      "seq": 12,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-2",
+          "key": "49c45ff19f47b1e05c621cc477ba92fd8a458369de3865268a002b344625fa8a"
+        },
+        "id": "64ee44c9b895b7d7c5a3fa010c81e8f38d0547fd6f01bf685a36341a2ba5fbbd",
+        "kind": "blob.manifest",
+        "lamport": 5,
+        "mono_time": 41,
+        "payload": {
+          "chunks": [
+            "98ea892e39fd69f920298b84b2e24f1c8af992be4546aaeef5dbc201bb1dee7f",
+            "2c5f0b535a0fb24ccc1341a60720adfa39c6576b798abaa8a5654aff4f3d42b1",
+            "4117d797937feea3a394053439b01020734f885df68a8e4b8de0a3a7e4f50a77",
+            "ab5a24030fbbba24bc1094fd4ee7a8bb27a860bd77512abec7f883a0f09a8071",
+            "bf93ef3591c88dd871d8e61cf08e48fe2333d58a8d4e661b291b7bee0b6b1007",
+            "29ffccf6c7a1d6b2ca17d65ef708a8c5aa499a71bc8254f8970f6d023c04411b",
+            "770dcf960f37585998bd2c26eb3dd6c9471e4f672093b5e4633b6391e0280ee8"
+          ],
+          "name": "tst-county-map.pmtiles",
+          "root": "44546e5609cceab72a689541ff5afb330671f04947d51b4e4a79d0c210610976",
+          "size": 6471456
+        },
+        "prev": "8a1802d47c592f22bfd8f48c1b408a2eaeb032b9126be8f318746355a3551882",
+        "seq": 3,
+        "sig": "cdd4adcbf3b47a2dde03292043b077880ce2c26e4ac78d49bad157f3e38408b0a4a3d786359fad8f09b17e39dce5e6c1416b0e1ec37ce49472a6e19aece93f06",
+        "wall_time": "2026-11-23T23:41:35.909Z"
+      },
+      "seen_ms": 1795477297932,
+      "seq": 13,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-2",
+          "key": "49c45ff19f47b1e05c621cc477ba92fd8a458369de3865268a002b344625fa8a"
+        },
+        "id": "3146d3053c91a6712695a597f8b8f16e3385060e52b61ab22d779daf987d1ceb",
+        "kind": "node.poll",
+        "lamport": 5,
+        "log": "telemetry",
+        "mono_time": 65375,
+        "payload": {
+          "ads_hash": "9fbbc0055654bc53c7de64701de6d679",
+          "api_version": "2.0",
+          "firmware": "4.26.7.0",
+          "hosts_hash": "cb679c69ac94198133d584e883a2a458",
+          "lat": 35.63,
+          "links": [
+            {
+              "ip": "10.1.0.4",
+              "metric": 256.0,
+              "neighbor": "tst-north",
+              "noise": -95.0,
+              "nquality": 98.0,
+              "quality": 98.0,
+              "rtt": 2.0,
+              "rx_rate": 117.0,
+              "signal": -70.0,
+              "snr": 25.0,
+              "tx_fail": 2.0,
+              "tx_rate": 130.0,
+              "type": "RF"
+            }
+          ],
+          "local_services": [
+            "Paso Camera"
+          ],
+          "lon": -120.69,
+          "model": "Ubiquiti Rocket 5AC Lite",
+          "node": "tst-paso",
+          "ok": true,
+          "stale_skipped": 0,
+          "trackers": true,
+          "via": "lan"
+        },
+        "prev": "6ddaa0910e8af5873c94141f67a3ef5679edb5a40c25936c96d957cdd574158f",
+        "seq": 1,
+        "sig": "d9ea2bf02a6a96a56aa291fd6d9e9b88b385f41bba0ee7a765b48225d14959101fa0e922415ebd8972d205f1921a679b958fda9ed5a00d8734e84b12a7733103",
+        "wall_time": "2026-11-23T23:42:24.231Z"
+      },
+      "seen_ms": 1795477345559,
+      "seq": 15,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-3",
+          "key": "611d0631007ae817a3fbc407da5f09560ff9485a49e9badcc32e93ccfa8941db"
+        },
+        "id": "87ba4da9ff7084984018c3a3edc665ff1ef55f09567339ac54b61f4af56705bf",
+        "kind": "node.poll",
+        "lamport": 7,
+        "log": "telemetry",
+        "mono_time": 61515,
+        "payload": {
+          "ads_hash": "9fbbc0055654bc53c7de64701de6d679",
+          "api_version": "1.14",
+          "firmware": "3.25.8.0",
+          "hosts_hash": "cb679c69ac94198133d584e883a2a458",
+          "lat": 35.18,
+          "links": [
+            {
+              "ip": "10.1.0.1",
+              "neighbor": "tst-cuesta",
+              "noise": -95.0,
+              "nquality": 100.0,
+              "quality": 100.0,
+              "rx_rate": 19.5,
+              "signal": -78.0,
+              "snr": 17.0,
+              "tx_fail": 0.0,
+              "tx_rate": 26.0,
+              "type": "RF"
+            }
+          ],
+          "local_services": [],
+          "lon": -120.55,
+          "model": "Ubiquiti Rocket M5",
+          "node": "tst-lopez",
+          "ok": true,
+          "stale_skipped": 0,
+          "trackers": true,
+          "via": "lan"
+        },
+        "prev": "eca84f4fe1ec2ac7e46de402e8634bde6baffc6a57f8e9eeecd31db096fa3244",
+        "seq": 1,
+        "sig": "83b576d5b762e56a6ed4dcb47e285a835ecb7ffb064b8353e09ed0626f6ee3141dd3c17bc046976ba813d5785a416b89a81fd89ffa943a1cdd8faedfebfea806",
+        "wall_time": "2026-11-23T23:42:20.376Z"
+      },
+      "seen_ms": 1795477345579,
+      "seq": 16,
+      "trusted": true
+    },
+    {
+      "event": {
+        "author": {
+          "call": "N0CALL-3",
+          "key": "611d0631007ae817a3fbc407da5f09560ff9485a49e9badcc32e93ccfa8941db"
+        },
+        "id": "18c7c9a3687fb7c6bf4f5a3267291a824d4ba73b020ea0730c932188a4ba286c",
+        "kind": "node.poll",
+        "lamport": 8,
+        "log": "telemetry",
+        "mono_time": 117030,
+        "payload": {
+          "ads_hash": "9fbbc0055654bc53c7de64701de6d679",
+          "api_version": "1.14",
+          "firmware": "3.25.8.0",
+          "hosts_hash": "cb679c69ac94198133d584e883a2a458",
+          "lat": 35.18,
+          "links": [
+            {
+              "ip": "10.1.0.1",
+              "neighbor": "tst-cuesta",
+              "noise": -95.0,
+              "nquality": 99.0,
+              "quality": 99.0,
+              "rx_rate": 19.5,
+              "signal": -77.0,
+              "snr": 18.0,
+              "tx_fail": 1.0,
+              "tx_rate": 26.0,
+              "type": "RF"
+            }
+          ],
+          "local_services": [],
+          "lon": -120.55,
+          "model": "Ubiquiti Rocket M5",
+          "node": "tst-lopez",
+          "ok": true,
+          "stale_skipped": 0,
+          "trackers": true,
+          "via": "lan"
+        },
+        "prev": "87ba4da9ff7084984018c3a3edc665ff1ef55f09567339ac54b61f4af56705bf",
+        "seq": 2,
+        "sig": "fe4e698ff2e26e00e00a4c8dc2f141972fcf01d332371d027814a4ca254f107dcd4dad334b117c461f94eb2a14ecd84b571cd8cd90ebfa8786940a969c1a3f02",
+        "wall_time": "2026-11-23T23:43:15.891Z"
+      },
+      "seen_ms": 1795477402048,
+      "seq": 20,
+      "trusted": true
+    }
+  ]
+}

@@ -1338,6 +1338,7 @@ fn events(c: &Ctx, f: &mut Frame, area: Rect, rows: &mut TableState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fmt::Write;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering::SeqCst};
 
@@ -1348,9 +1349,13 @@ mod tests {
     use ridgewarden::identity::Identity;
     use ridgewarden::log::Log;
     use ridgewarden::store::Store;
+    use ridgewarden::util::esc;
+    use ridgewarden_client::core::FeedItem;
     use ridgewarden_client::tui::MIN_SIZE;
     use ridgewarden_client::tui::ratatui::Terminal;
     use ridgewarden_client::tui::ratatui::backend::TestBackend;
+    use ridgewarden_client::tui::ratatui::buffer::{self, Buffer};
+    use ridgewarden_client::tui::ratatui::style::{Color, Modifier};
     use serde_json::json;
 
     fn log() -> Log {
@@ -1361,27 +1366,17 @@ mod tests {
         .unwrap()
     }
 
-    /// A node that answers its first poll like 4.x firmware and every later one with a 503.
-    async fn fading_node() -> String {
+    /// A node that answers its polls with `replies` in turn, then with a 503.
+    async fn node(replies: Vec<Value>) -> String {
+        let replies = Arc::new(replies);
         let polls = Arc::new(AtomicUsize::new(0));
         let sysinfo = move || {
-            let polls = polls.clone();
+            let (replies, polls) = (replies.clone(), polls.clone());
             async move {
-                if polls.fetch_add(1, SeqCst) > 0 {
-                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                match replies.get(polls.fetch_add(1, SeqCst)) {
+                    Some(r) => Json(r.clone()).into_response(),
+                    None => StatusCode::SERVICE_UNAVAILABLE.into_response(),
                 }
-                Json(json!({
-                    "api_version": "2.0",
-                    "node": "TST-PASO",
-                    "node_details": {"firmware_version": "4.26.10.0", "model": "Ubiquiti Rocket M5 XW"},
-                    "link_info": {"10.54.1.4": {"hostname": "TST-NORTH", "linkType": "RF", "interface": "wlan0", "signal": -70, "noise": -95}},
-                    "lqm": {"info": {"now": 100, "trackers": {"02:00:0a:36:01:04": {
-                        "hostname": "tst-north", "type": "RF", "ip": "10.54.1.4", "lastseen": 100,
-                        "signal": -70, "snr": 25, "quality": 98, "rev_quality": 97}}}},
-                    "hosts": [{"name": "TST-NORTH", "ip": "10.54.1.4"}],
-                    "services": [],
-                }))
-                .into_response()
             }
         };
         let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1391,20 +1386,60 @@ mod tests {
         url
     }
 
-    /// The text on a `w` by `h` terminal after one draw.
-    fn screen(top: &mut Top, w: u16, h: u16) -> String {
+    /// `top` showing `s`, with a loader that never runs.
+    fn showing(cfg: Config, s: Snap, theme: Theme) -> Top {
+        Top {
+            cfg,
+            theme,
+            refresh: Refresh::spawn(Duration::from_secs(3600), async || {
+                Err("not read in this test".to_string())
+            })
+            .unwrap(),
+            snap: Some(s),
+            err: None,
+            tab: 0,
+            rows: Default::default(),
+            page: 0,
+        }
+    }
+
+    /// One draw on a `w` by `h` terminal.
+    fn frame(top: &mut Top, w: u16, h: u16) -> Buffer {
         let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
         t.draw(|f| top.draw(f)).unwrap();
-        let b = t.backend().buffer();
-        let rows = (0..h).map(|y| (0..w).map(|x| b[(x, y)].symbol()).collect::<String>());
+        t.backend().buffer().clone()
+    }
+
+    /// A frame's text, row by row.
+    fn text(b: &Buffer) -> String {
+        let a = b.area;
+        let rows =
+            (0..a.height).map(|y| (0..a.width).map(|x| b[(x, y)].symbol()).collect::<String>());
         rows.collect::<Vec<_>>().join("\n")
+    }
+
+    /// The text on a `w` by `h` terminal after one draw.
+    fn screen(top: &mut Top, w: u16, h: u16) -> String {
+        text(&frame(top, w, h))
     }
 
     #[tokio::test]
     async fn top_shows_what_the_agent_keeps() {
         let dir = tempfile::tempdir().unwrap();
         let mut cfg: Config = toml::from_str(&Config::example("N0AAA", dir.path())).unwrap();
-        cfg.node.url = fading_node().await;
+        // answers the first poll like 4.x firmware, and every later one with a 503
+        cfg.node.url = node(vec![json!({
+            "api_version": "2.0",
+            "node": "TST-PASO",
+            "node_details": {"firmware_version": "4.26.10.0", "model": "Ubiquiti Rocket M5 XW"},
+            "link_info": {"10.54.1.4": {"hostname": "TST-NORTH", "linkType": "RF", "interface": "wlan0", "signal": -70, "noise": -95}},
+            "lqm": {"info": {"now": 100, "trackers": {"02:00:0a:36:01:04": {
+                "hostname": "tst-north", "type": "RF", "ip": "10.54.1.4", "lastseen": 100,
+                "signal": -70, "snr": 25, "quality": 98, "rev_quality": 97}}}},
+            "hosts": [{"name": "TST-NORTH", "ip": "10.54.1.4"}],
+            "services": [],
+        })])
+        .await;
         cfg.sync.discover = false;
         let app = agent::open(cfg.clone()).unwrap();
         app.poll_once().await.unwrap();
@@ -1449,19 +1484,7 @@ mod tests {
             ("N0AAA", 2)
         );
 
-        let mut top = Top {
-            cfg,
-            theme: Theme { color: false },
-            refresh: Refresh::spawn(Duration::from_secs(3600), async || {
-                Err("not read in this test".to_string())
-            })
-            .unwrap(),
-            snap: Some(s),
-            err: None,
-            tab: 0,
-            rows: Default::default(),
-            page: 0,
-        };
+        let mut top = showing(cfg, s, Theme { color: false });
         let overview = screen(&mut top, 100, 30);
         assert!(
             overview.contains("ridgewarden top  N0AAA on tst-paso"),
@@ -1493,6 +1516,125 @@ mod tests {
         assert!(
             screen(&mut top, MIN_SIZE.0 - 1, MIN_SIZE.1).contains("Make the terminal at least")
         );
+    }
+
+    /// Site 1 of three on the simulator, with site 2 cut off: the README's picture of `top`.
+    /// The fixture is what site 1's core and node answered during that partition drill: its
+    /// peers and blobs, the other two stations' events, and the node's sysinfo. With
+    /// README_SHOTS=1 the frame is also written to ridgewarden-top.html in the temp folder,
+    /// to be screenshotted.
+    #[tokio::test]
+    async fn the_overview_during_a_partition_drill() {
+        let fx: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/top-drill.json")).unwrap();
+        let feed: Vec<FeedItem> = serde_json::from_value(fx["feed"].clone()).unwrap();
+        let events: Vec<Event> = feed.into_iter().map(|i| i.event).collect();
+        let dir = tempfile::tempdir().unwrap();
+        // site 1's key in the drill
+        std::fs::write(dir.path().join("identity.key"), hex::encode([1u8; 32])).unwrap();
+        let mut cfg: Config = toml::from_str(&Config::example("N0CALL-1", dir.path())).unwrap();
+        cfg.node.url = node(vec![fx["sysinfo"].clone()]).await;
+        cfg.sync.discover = false;
+        let others: BTreeSet<String> = events.iter().map(|e| e.author.key.clone()).collect();
+        cfg.trust.keys = others.into_iter().collect();
+        let app = agent::open(cfg.clone()).unwrap();
+        assert_eq!(app.log.ingest(&events).unwrap().accepted, events.len());
+        app.poll_once().await.unwrap();
+        for b in fx["blobs"]["blobs"].as_array().unwrap() {
+            if b["wanted"] == true && b["complete"] == false {
+                blobs::want(&app.log.store.conn(), b["root"].as_str().unwrap(), true).unwrap();
+            }
+        }
+        // each peer last heard from as long ago as it was then
+        let shift = now_ms() - fx["at"].as_i64().unwrap();
+        let mut peers = serde_json::from_value::<Peers>(fx["peers"].clone())
+            .unwrap()
+            .peers;
+        for p in &mut peers {
+            p.last_ok = p.last_ok.map(|t| t + shift);
+        }
+        let slow = Slow {
+            at: now_ms(),
+            forks: app.log.fork_count().unwrap(),
+            usage: usage::measure(&app).unwrap(),
+        };
+        let s = read(&app, local_base(&cfg), Ok(peers), slow).unwrap();
+        let mut top = showing(cfg, s, Theme { color: true });
+        let b = frame(&mut top, 80, 24);
+        let shown = text(&b);
+        for line in [
+            "ridgewarden top  N0CALL-1 on tst-shack",
+            " OK       Agent  running, dashboard on http://127.0.0.1:8790/",
+            " PARTIAL  Peers  2 peer(s): 1 synced lately, 1 failing",
+            "from 3 station(s) (3 trusted); nothing missing",
+            " PARTIAL  Blobs  1 fetching",
+        ] {
+            assert!(shown.contains(line), "{line:?} in\n{shown}");
+        }
+        if std::env::var_os("README_SHOTS").is_some() {
+            std::fs::write(std::env::temp_dir().join("ridgewarden-top.html"), html(&b)).unwrap();
+        }
+    }
+
+    /// A frame as a page of colored monospace cells, light or dark with the system.
+    fn html(b: &Buffer) -> String {
+        let mut page = String::from(
+            "<!doctype html><meta charset=utf-8><title>ridgewarden top</title><style>\
+             :root{--fg:#1f2328;--bg:#fff;--edge:#d0d7de}\
+             @media (prefers-color-scheme:dark){:root{--fg:#d1d7e0;--bg:#0d1117;--edge:#30363d}}\
+             body{margin:0;background:var(--bg)}\
+             pre{display:inline-block;margin:0;padding:10px 14px;border:1px solid var(--edge);\
+             font:16px/1.3 Consolas,monospace;color:var(--fg);background:var(--bg)}\
+             </style><pre>",
+        );
+        for y in 0..b.area.height {
+            let mut run = (String::new(), String::new());
+            for x in 0..b.area.width {
+                let c = &b[(x, y)];
+                let style = css(c);
+                if style != run.0 {
+                    span(&mut page, &run);
+                    run = (style, String::new());
+                }
+                run.1.push_str(c.symbol());
+            }
+            span(&mut page, &run);
+            page.push('\n');
+        }
+        page + "</pre>"
+    }
+
+    fn span(page: &mut String, (style, text): &(String, String)) {
+        if !text.is_empty() {
+            let _ = write!(page, "<span style=\"{style}\">{}</span>", esc(text));
+        }
+    }
+
+    /// A cell as CSS: Tango's palette for the pills, and the page's own colors for the
+    /// terminal's default ones.
+    fn css(c: &buffer::Cell) -> String {
+        let color = |c: Color, default: &'static str| match c {
+            Color::Reset => default,
+            Color::Black => "#2e3436",
+            Color::Red => "#cc0000",
+            Color::Green => "#4e9a06",
+            Color::Yellow => "#c4a000",
+            Color::Gray => "#d3d7cf",
+            Color::White => "#eeeeec",
+            other => panic!("no CSS for {other:?}"),
+        };
+        let (mut fg, mut bg) = (color(c.fg, "var(--fg)"), color(c.bg, "var(--bg)"));
+        if c.modifier.contains(Modifier::REVERSED) {
+            std::mem::swap(&mut fg, &mut bg);
+        }
+        let mut s = format!("color:{fg};background:{bg}");
+        if c.modifier.contains(Modifier::BOLD) {
+            s.push_str(";font-weight:bold");
+        }
+        if c.modifier.contains(Modifier::DIM) {
+            s.push_str(";opacity:.6");
+        }
+        s
     }
 
     #[test]
