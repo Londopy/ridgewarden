@@ -4,6 +4,8 @@ All notable changes to ridgewarden are listed here. The format follows [Keep a C
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-23
+
 ### Added
 
 - `ridgewarden top`: the agent live in a terminal or an SSH session, with an overview and a page each for peers, the log (each station's chains, forks, gaps and refused events), the node and the nodes it crawls, blobs with fetch progress, and recent events.
@@ -87,5 +89,6 @@ All notable changes to ridgewarden are listed here. The format follows [Keep a C
 - A blob fetched from a trusted station (by `auto_want` or wanted by hand) is fetched by that station's manifest, even when someone else's manifest for the same file arrived first; manifests with an impossible size or index length are ignored.
 - A chunk found damaged during an export sends the blob back to fetching instead of leaving it marked complete.
 
-[Unreleased]: https://github.com/Londopy/ridgewarden/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Londopy/ridgewarden/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Londopy/ridgewarden/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Londopy/ridgewarden/releases/tag/v0.1.0

@@ -1336,7 +1336,7 @@ dependencies = [
 
 [[package]]
 name = "ridgewarden"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "ridgewarden-client"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -1380,7 +1380,7 @@ dependencies = [
 
 [[package]]
 name = "ridgewarden-sim"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "axum",

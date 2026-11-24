@@ -1,6 +1,6 @@
 [package]
 name = "ridgewarden-client"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared types and helpers for ridgewarden apps: events, the core's local API, mesh projections, page layout"
 edition.workspace = true
 license.workspace = true

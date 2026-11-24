@@ -1,6 +1,6 @@
 [package]
 name = "ridgewarden-sim"
-version = "0.1.0"
+version = "0.2.0"
 description = "Fake AREDN mesh for testing ridgewarden without touching real nodes"
 publish = false
 edition.workspace = true

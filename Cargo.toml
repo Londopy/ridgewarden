@@ -12,7 +12,7 @@ rust-version = "1.88"
 
 [package]
 name = "ridgewarden"
-version = "0.1.0"
+version = "0.2.0"
 description = "LAN-side edge agent for AREDN meshes: link history, service health and a signed, partition-tolerant event log"
 edition.workspace = true
 license.workspace = true
@@ -33,7 +33,7 @@ clap = { version = "4.6.8", features = ["derive"] }
 ed25519-dalek = "3.0.0"
 getrandom = "0.4.3"
 hex = "0.4.3"
-ridgewarden-client = { version = "0.1.0", path = "crates/ridgewarden-client", features = ["tui"] }
+ridgewarden-client = { version = "0.2.0", path = "crates/ridgewarden-client", features = ["tui"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "query"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
